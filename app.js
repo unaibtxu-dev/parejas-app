@@ -4122,6 +4122,151 @@
     });
   }
 
+  /* ============ Tus datos: descargar y borrar ============ */
+  // El RGPD da derecho a llevarte tus datos y a que los borren. Hasta ahora no
+  // había ninguna forma de hacerlo desde la app: había que entrar a la base de
+  // datos a mano. Esto es requisito para abrirla a gente de fuera.
+
+  var USER_DATA_COLLECTIONS = [
+    "expenses", "fixed_expenses", "budgets", "settlements",
+    "loans", "goals", "goal_contributions", "profiles"
+  ];
+
+  // Convierte lo que devuelve Firestore a algo legible en un archivo: las
+  // fechas vienen como objetos raros (Timestamp) y saldrían ilegibles.
+  function plainifyDoc(doc) {
+    var out = { id: doc.id };
+    var data = doc.data();
+    Object.keys(data).forEach(function (k) {
+      var v = data[k];
+      if (v && typeof v.toDate === "function") out[k] = v.toDate().toISOString();
+      else out[k] = v;
+    });
+    return out;
+  }
+
+  function collectMyData() {
+    var email = state.user.email;
+    var result = {
+      generado: new Date().toISOString(),
+      cuenta: { email: email, nombreGoogle: state.user.displayName || "" },
+      espacios: []
+    };
+
+    return listUserSpaceIds(email).then(function (ids) {
+      return Promise.all(ids.map(function (sid) {
+        return db.collection("spaces").doc(sid).get().then(function (spaceDoc) {
+          var space = {
+            id: sid,
+            nombre: spaceDoc.exists ? (spaceDoc.data().name || "") : "",
+            tipo: spaceDoc.exists ? (spaceDoc.data().type || "pareja") : "",
+            miembros: spaceDoc.exists ? (spaceDoc.data().memberEmails || []) : [],
+            datos: {}
+          };
+          return Promise.all(USER_DATA_COLLECTIONS.map(function (col) {
+            return db.collection(col).where("spaceId", "==", sid).get()
+              .then(function (snap) { space.datos[col] = snap.docs.map(plainifyDoc); })
+              .catch(function () { space.datos[col] = "no se ha podido leer"; });
+          })).then(function () { return space; });
+        });
+      }));
+    }).then(function (spaces) {
+      result.espacios = spaces;
+      return result;
+    });
+  }
+
+  function exportMyData() {
+    var btn = $("btn-export-my-data");
+    btn.disabled = true;
+    btn.textContent = "Preparando...";
+    collectMyData().then(function (data) {
+      var blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = "mis-datos-gastos-en-pareja.json";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast("¡Datos descargados! 📦");
+    }).catch(function (err) {
+      console.error(err);
+      showToast("No se han podido preparar tus datos.");
+    }).finally(function () {
+      btn.disabled = false;
+      btn.textContent = "📦 Descargar todos mis datos";
+    });
+  }
+
+  // Qué borra exactamente:
+  //  - Espacios donde estás SOLO tú: se borra todo su contenido.
+  //  - Espacios compartidos: se te quita como miembro, pero los gastos NO se
+  //    borran, porque son un historial común que la otra persona también tiene
+  //    derecho a conservar (si se borraran, le descuadraría su contabilidad).
+  // Esto se explica en el aviso antes de confirmar, para que nadie se lleve
+  // una sorpresa.
+  function deleteMyAccount() {
+    var email = state.user.email;
+
+    return listUserSpaceIds(email).then(function (ids) {
+      return Promise.all(ids.map(function (sid) {
+        return db.collection("spaces").doc(sid).get().then(function (spaceDoc) {
+          var members = spaceDoc.exists ? (spaceDoc.data().memberEmails || []) : [];
+          var soloYo = members.length <= 1;
+
+          var work = [];
+          if (soloYo) {
+            USER_DATA_COLLECTIONS.forEach(function (col) {
+              work.push(
+                db.collection(col).where("spaceId", "==", sid).get().then(function (snap) {
+                  return Promise.all(snap.docs.map(function (d) { return d.ref.delete(); }));
+                }).catch(function () { /* si una colección falla, seguimos con el resto */ })
+              );
+            });
+          }
+          return Promise.all(work).then(function () { return leaveSpace(sid); });
+        }).catch(function () { return leaveSpace(sid); });
+      }));
+    }).then(function () {
+      // Los avisos push van por dispositivo, así que se quitan todos los tuyos.
+      return db.collection("push_tokens").where("email", "==", email).get()
+        .then(function (snap) { return Promise.all(snap.docs.map(function (d) { return d.ref.delete(); })); })
+        .catch(function () { /* si no hay o falla, no bloquea el borrado */ });
+    });
+  }
+
+  function initMyDataButtons() {
+    $("btn-export-my-data").addEventListener("click", exportMyData);
+
+    $("btn-delete-account").addEventListener("click", function () {
+      showConfirm(
+        "Se borrarán tus espacios personales con todo lo que hay dentro, y saldrás de los compartidos. " +
+        "En los compartidos los gastos NO se borran, porque son el historial de los dos. " +
+        "Esto no se puede deshacer. ¿Seguro?"
+      ).then(function (ok) {
+        if (!ok) return;
+        // Doble confirmación a propósito: es irreversible y afecta a dinero.
+        return showConfirm("Última comprobación: vas a perder el acceso a tus datos para siempre. ¿Lo borro?").then(function (ok2) {
+          if (!ok2) return;
+          var btn = $("btn-delete-account");
+          btn.disabled = true;
+          btn.textContent = "Borrando...";
+          deleteMyAccount().then(function () {
+            showToast("Cuenta borrada. Hasta pronto.");
+            setTimeout(function () { signOut(); }, 1500);
+          }).catch(function (err) {
+            console.error(err);
+            showToast("No se ha podido borrar del todo. Inténtalo otra vez.");
+            btn.disabled = false;
+            btn.textContent = "🗑️ Borrar mi cuenta y mis datos";
+          });
+        });
+      });
+    });
+  }
+
   /* ============ Editar un gasto fijo ============ */
   // Antes solo se podía crear y borrar: si el gimnasio subía de 70 a 75 € había
   // que borrarlo y volver a escribirlo. Se hace en un modal, como préstamos y
@@ -4721,6 +4866,7 @@
     safe(initAvatarPicker, "initAvatarPicker");
     safe(initImportFixedModal, "initImportFixedModal");
     safe(initFixedModal, "initFixedModal");
+    safe(initMyDataButtons, "initMyDataButtons");
     safe(initExpenseListActions, "initExpenseListActions");
     safe(initAddSharedButton, "initAddSharedButton");
     safe(initSettleUpButton, "initSettleUpButton");
