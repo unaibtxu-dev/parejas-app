@@ -108,6 +108,23 @@ service cloud.firestore {
       allow create: if canCreateDoc();
     }
 
+    // ---- Sugerencias y fallos que manda la gente ----
+    // Solo se puede CREAR, nunca leer ni modificar: así nadie puede cotillear
+    // lo que ha escrito otro ni borrar su propia queja. Se leen desde la
+    // consola de Firebase.
+    //
+    // El límite de 2000 caracteres se comprueba aquí y no solo en la app,
+    // porque las validaciones del navegador se pueden saltar — sin esto,
+    // alguien podría escribir documentos enormes y agotar la cuota gratuita.
+    match /feedback/{docId} {
+      allow create: if isSignedIn() &&
+        request.resource.data.email == request.auth.token.email &&
+        request.resource.data.mensaje is string &&
+        request.resource.data.mensaje.size() > 0 &&
+        request.resource.data.mensaje.size() <= 2000;
+      allow read, update, delete: if false;
+    }
+
     // ---- Tokens de notificaciones push ----
     // Nadie necesita LEER estos tokens desde el cliente — ni siquiera el
     // propio dueño. Solo el servidor (con la clave de administrador, que se

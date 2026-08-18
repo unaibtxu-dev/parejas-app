@@ -107,6 +107,7 @@
     swRegistration: null,
     editingFixedId: null,
     selectedFixedCategory: "gasto",
+    selectedFeedbackType: "idea",
     editingGoalId: null,
     selectedGoalCategory: "viaje",
     selectedGoalShared: true,
@@ -4240,6 +4241,83 @@
     });
   }
 
+  /* ============ Sugerencias ============ */
+  // Se guardan en Firestore y se leen desde la consola de Firebase. Con el
+  // mensaje se manda contexto técnico (versión, tipo de espacio, navegador)
+  // porque un "no me funciona" sin saber dónde estaba la persona es casi
+  // imposible de arreglar. NO se manda ningún dato de sus gastos.
+
+  var FEEDBACK_TYPES = [
+    { key: "idea", label: "💡 Una idea" },
+    { key: "fallo", label: "🐛 Algo va mal" }
+  ];
+
+  function initFeedbackTypePicker() {
+    var wrap = $("feedback-type-picker");
+    wrap.innerHTML = "";
+    FEEDBACK_TYPES.forEach(function (t) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "type-chip" + (t.key === state.selectedFeedbackType ? " selected" : "");
+      btn.dataset.key = t.key;
+      btn.textContent = t.label;
+      btn.addEventListener("click", function () {
+        state.selectedFeedbackType = t.key;
+        wrap.querySelectorAll(".type-chip").forEach(function (el) {
+          el.classList.toggle("selected", el.dataset.key === t.key);
+        });
+      });
+      wrap.appendChild(btn);
+    });
+  }
+
+  function appVersion() {
+    // La versión sale del ?v= con el que se carga app.js, que es lo que ya
+    // usamos para refrescar la caché — así no hay que mantener otro número.
+    var script = document.querySelector('script[src*="app.js"]');
+    var match = script && script.src.match(/[?&]v=([^&]+)/);
+    return match ? match[1] : "desconocida";
+  }
+
+  function sendFeedback() {
+    var textarea = $("input-feedback");
+    var mensaje = textarea.value.trim().slice(0, 2000);
+    if (!mensaje) { showToast("Escribe algo antes de enviar."); return; }
+
+    var btn = $("btn-send-feedback");
+    btn.disabled = true;
+    btn.textContent = "Enviando...";
+
+    db.collection("feedback").add({
+      email: state.user.email,
+      tipo: state.selectedFeedbackType,
+      mensaje: mensaje,
+      contexto: {
+        version: appVersion(),
+        tipoEspacio: state.space ? state.space.type : "sin espacio",
+        pestana: state.mainTab,
+        navegador: navigator.userAgent,
+        pantalla: window.innerWidth + "x" + window.innerHeight
+      },
+      creadoEn: firebase.firestore.FieldValue.serverTimestamp()
+    }).then(function () {
+      textarea.value = "";
+      $("avatar-picker").hidden = true;
+      showToast("¡Gracias! Lo leeremos. 🙏");
+    }).catch(function (err) {
+      console.error(err);
+      showToast("No se ha podido enviar. Inténtalo otra vez.");
+    }).finally(function () {
+      btn.disabled = false;
+      btn.textContent = "Enviar";
+    });
+  }
+
+  function initFeedback() {
+    initFeedbackTypePicker();
+    $("btn-send-feedback").addEventListener("click", sendFeedback);
+  }
+
   /* ============ Tus datos: descargar y borrar ============ */
   // El RGPD da derecho a llevarte tus datos y a que los borren. Hasta ahora no
   // había ninguna forma de hacerlo desde la app: había que entrar a la base de
@@ -4985,6 +5063,7 @@
     safe(initImportFixedModal, "initImportFixedModal");
     safe(initFixedModal, "initFixedModal");
     safe(initMyDataButtons, "initMyDataButtons");
+    safe(initFeedback, "initFeedback");
     safe(initExpenseListActions, "initExpenseListActions");
     safe(initAddSharedButton, "initAddSharedButton");
     safe(initSettleUpButton, "initSettleUpButton");

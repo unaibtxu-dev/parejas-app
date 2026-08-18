@@ -255,6 +255,15 @@ ul { list-style: none; margin: 0; padding: 0; }
 .empty-explain-text { font-size: 13px; font-weight: 600; color: var(--gray); line-height: 1.55; margin: 0; }
 .debt-text.empty { color: var(--gray); font-size: 18px; }
 
+/* Sugerencias */
+.feedback-textarea {
+  width: 100%; margin-top: 10px; border: 1px solid var(--line); background: var(--cream);
+  border-radius: var(--radius-sm); padding: 11px 12px; font-size: 14px; font-weight: 600;
+  color: var(--dark); outline: none; font-family: inherit; resize: vertical; min-height: 70px;
+}
+.feedback-send { width: 100%; margin-top: 10px; }
+#feedback-block { padding-bottom: 18px; border-bottom: 1px solid var(--line); margin-bottom: 18px; }
+
 /* Tus datos: descargar / borrar cuenta */
 #btn-export-my-data { width: 100%; }
 .btn-danger-outline {
