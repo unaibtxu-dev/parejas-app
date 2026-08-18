@@ -1932,6 +1932,72 @@
     setTimeout(function () { if (state.map) state.map.invalidateSize(); }, 200);
   }
 
+  // La deuda se calcula con gastos de TODOS los meses, no solo del actual, así
+  // que si el balance sale mal no bastaba con mirar el mes en curso: había que
+  // ir buscando mes a mes por la pestaña de gastos. Aquí se ven y se corrigen
+  // en el mismo sitio donde has detectado el error.
+  var DEBT_EXPENSES_SHOWN = 20;
+
+  function renderDebtExpenses() {
+    var card = $("debt-expenses-card");
+    if (!card) return;
+
+    var all = debtExpenses().slice().sort(function (a, b) { return b.date - a.date; });
+    card.hidden = all.length === 0;
+    if (card.hidden) return;
+
+    $("debt-expenses-count").textContent = all.length + (all.length === 1 ? " gasto" : " gastos");
+
+    var shown = all.slice(0, DEBT_EXPENSES_SHOWN);
+    var ul = $("debt-expense-list");
+    ul.innerHTML = "";
+    shown.forEach(function (e) {
+      var cat = CATEGORY_BY_KEY[e.category] || CATEGORY_BY_KEY.otros;
+      var li = document.createElement("li");
+      li.innerHTML =
+        '<span class="li-icon" style="background:' + cat.color + '22">' + cat.emoji + '</span>' +
+        '<span class="li-avatar" title="' + escapeHtml(partnerLabel(e.payerEmail)) + '">' + getAvatar(e.payerEmail) + '</span>' +
+        '<span class="li-body"><span class="li-title">' + (escapeHtml(e.note) || escapeHtml(e.place) || cat.label) + '</span>' +
+        '<span class="li-sub">' + partnerLabel(e.payerEmail) + ' · ' + fmtDate(e.date) + '</span></span>' +
+        '<span class="li-amount">' + fmtMoney(e.amount) + '</span>' +
+        '<span class="li-actions">' +
+        '<button type="button" class="li-action-btn debt-exp-edit" data-id="' + e.id + '" title="Editar">✏️</button>' +
+        '<button type="button" class="li-action-btn debt-exp-del" data-id="' + e.id + '" title="Eliminar">🗑️</button>' +
+        '</span>';
+      ul.appendChild(li);
+    });
+
+    // Si hay más de los que caben, se dice — callarlo haría parecer que la
+    // deuda sale de menos gastos de los que realmente la componen.
+    var more = $("debt-expenses-more");
+    if (all.length > DEBT_EXPENSES_SHOWN) {
+      more.textContent = "Mostrando los " + DEBT_EXPENSES_SHOWN + " más recientes de " + all.length +
+        ". Los demás siguen contando en el balance; puedes verlos por meses en la pestaña Compartido.";
+      more.hidden = false;
+    } else {
+      more.hidden = true;
+    }
+
+    ul.querySelectorAll(".debt-exp-edit").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var exp = state.allExpenses.find(function (e) { return e.id === btn.dataset.id; });
+        if (exp) openModalForEdit(exp);
+      });
+    });
+
+    ul.querySelectorAll(".debt-exp-del").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        showConfirm("¿Eliminar este gasto? El balance entre vosotros se recalculará.").then(function (ok) {
+          if (!ok) return;
+          deleteExpense(btn.dataset.id).catch(function (err) {
+            console.error(err);
+            showToast("No se ha podido eliminar.");
+          });
+        });
+      });
+    });
+  }
+
   function renderDeudasPanel() {
     if (state.mainTab !== "deudas") return;
 
@@ -1967,6 +2033,7 @@
         PARTNERS[1].label + " ha pagado " + fmtMoney(totals[PARTNERS[1].email]) + " que cuenta para la deuda";
 
     $("btn-settle-up").hidden = Math.abs(half) < 0.01;
+    safe(renderDebtExpenses, "renderDebtExpenses");
 
     var ul = $("settlement-list");
     ul.innerHTML = "";
@@ -3632,7 +3699,17 @@
   }
 
   function initImportModal() {
+    // Tres puntos de entrada a propósito: dentro de la lista de gastos (donde
+    // está su pareja natural, el botón de exportar), en la guía inicial (que
+    // es cuando más se agradece no empezar de cero) y en el perfil (donde la
+    // gente busca los ajustes). Enterrado solo en la lista era imposible de
+    // encontrar si no sabías que existía.
     $("btn-import-csv").addEventListener("click", openImportModal);
+    $("btn-welcome-import").addEventListener("click", openImportModal);
+    $("btn-profile-import").addEventListener("click", function () {
+      $("avatar-picker").hidden = true;
+      openImportModal();
+    });
     document.querySelectorAll("[data-close-import]").forEach(function (el) {
       el.addEventListener("click", closeImportModal);
     });

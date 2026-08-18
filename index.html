@@ -8,8 +8,8 @@
 <meta name="theme-color" content="#FF6B9D">
 
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E💸%3C/text%3E%3C/svg%3E">
-<link rel="manifest" href="manifest.json?v=20260818p">
-<link rel="apple-touch-icon" href="assets/icon-192.png?v=20260818p">
+<link rel="manifest" href="manifest.json?v=20260818q">
+<link rel="apple-touch-icon" href="assets/icon-192.png?v=20260818q">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Gastos en Pareja">
@@ -20,7 +20,7 @@
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 
-<link rel="stylesheet" href="styles.css?v=20260818p">
+<link rel="stylesheet" href="styles.css?v=20260818q">
 </head>
 <body>
 
@@ -184,6 +184,11 @@
           </div>
         </div>
         <p id="welcome-invite-hint" class="welcome-hint" hidden>Y no olvides invitar a tu pareja con el botón 🔗 de arriba — si no, estarás apuntando solo.</p>
+
+        <div class="welcome-import">
+          <p class="welcome-import-text">¿No quieres empezar de cero? Sube el extracto de tu banco y te traemos los gastos que ya tienes.</p>
+          <button type="button" id="btn-welcome-import" class="btn-secondary">⬆️ Importar del banco</button>
+        </div>
       </section>
 
       <!-- Total del mes -->
@@ -295,6 +300,16 @@
           <button id="btn-add-shared" type="button" class="btn-secondary">+ Añadir gasto compartido</button>
           <button id="btn-settle-up" class="btn-primary" hidden>Marcar como saldado</button>
         </div>
+      </section>
+
+      <!-- Los gastos que forman la deuda, editables aquí mismo -->
+      <section id="debt-expenses-card" class="card" hidden>
+        <div class="card-header-row">
+          <h2 class="card-title">Gastos que forman esta deuda</h2>
+          <span id="debt-expenses-count" class="debt-count-chip">—</span>
+        </div>
+        <ul id="debt-expense-list" class="expense-list"></ul>
+        <p id="debt-expenses-more" class="debt-hint" hidden></p>
       </section>
 
       <section class="card">
@@ -672,6 +687,7 @@
 
     <div id="my-data-block">
       <label class="field-label">Tus datos</label>
+      <button type="button" id="btn-profile-import" class="btn-secondary" style="margin-bottom:10px;">⬆️ Importar extracto del banco</button>
       <button type="button" id="btn-export-my-data" class="btn-secondary">📦 Descargar todos mis datos</button>
       <p class="field-hint">Un archivo con todo lo que la app guarda de ti, de todos tus espacios.</p>
       <button type="button" id="btn-delete-account" class="btn-danger-outline">🗑️ Borrar mi cuenta y mis datos</button>
@@ -774,7 +790,7 @@
 <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script><script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging-compat.js"></script><script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-<script defer src="firebase-config.js?v=20260818p"></script>
-<script defer src="app.js?v=20260818p"></script>
+<script defer src="firebase-config.js?v=20260818q"></script>
+<script defer src="app.js?v=20260818q"></script>
 </body>
 </html>
