@@ -221,6 +221,31 @@ ul { list-style: none; margin: 0; padding: 0; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
+/* Guía de primeros pasos */
+.welcome-card { background: linear-gradient(135deg, rgba(108,92,231,0.07), rgba(255,107,157,0.07)); }
+.welcome-steps { display: flex; flex-direction: column; gap: 14px; }
+.welcome-step { display: flex; gap: 12px; align-items: flex-start; }
+.welcome-step-num {
+  flex-shrink: 0; width: 24px; height: 24px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--purple), var(--pink)); color: var(--white);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 800;
+}
+.welcome-step-text { font-size: 13.5px; font-weight: 600; color: var(--dark); line-height: 1.5; }
+.welcome-step-text strong { font-weight: 800; }
+.welcome-hint {
+  font-size: 12.5px; font-weight: 700; color: var(--purple);
+  margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--line);
+}
+.welcome-hint[hidden] { display: none; }
+
+/* Secciones vacías que explican para qué sirven */
+.empty-explain { text-align: center; padding: 8px 4px; }
+.empty-explain-emoji { font-size: 34px; display: block; margin-bottom: 10px; }
+.empty-explain-title { font-family: var(--ff-display); font-size: 17px; font-weight: 800; color: var(--dark); margin: 0 0 8px; }
+.empty-explain-text { font-size: 13px; font-weight: 600; color: var(--gray); line-height: 1.55; margin: 0; }
+.debt-text.empty { color: var(--gray); font-size: 18px; }
+
 /* Tus datos: descargar / borrar cuenta */
 #btn-export-my-data { width: 100%; }
 .btn-danger-outline {

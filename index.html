@@ -8,8 +8,8 @@
 <meta name="theme-color" content="#FF6B9D">
 
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E💸%3C/text%3E%3C/svg%3E">
-<link rel="manifest" href="manifest.json?v=20260818o">
-<link rel="apple-touch-icon" href="assets/icon-192.png?v=20260818o">
+<link rel="manifest" href="manifest.json?v=20260818p">
+<link rel="apple-touch-icon" href="assets/icon-192.png?v=20260818p">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Gastos en Pareja">
@@ -20,7 +20,7 @@
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 
-<link rel="stylesheet" href="styles.css?v=20260818o">
+<link rel="stylesheet" href="styles.css?v=20260818p">
 </head>
 <body>
 
@@ -165,6 +165,26 @@
     <div id="panel-gastos" class="main-panel active">
 
       <p id="personal-hello" class="personal-hello" hidden>Estás viendo el gasto personal de <strong id="personal-hello-name">—</strong></p>
+
+      <!-- Guía de primeros pasos: desaparece sola en cuanto hay un gasto -->
+      <section id="welcome-card" class="card welcome-card" hidden>
+        <h2 class="card-title">👋 Cómo funciona esto</h2>
+        <div class="welcome-steps">
+          <div class="welcome-step">
+            <span class="welcome-step-num">1</span>
+            <span class="welcome-step-text"><strong>Apunta un gasto</strong> con el botón <strong>+</strong> de abajo. Elige si es <strong>conjunto</strong> (de los dos) o <strong>individual</strong> (solo tuyo).</span>
+          </div>
+          <div class="welcome-step">
+            <span class="welcome-step-num">2</span>
+            <span class="welcome-step-text">En <strong>💸 Deudas</strong> se calcula solo quién le debe a quién. Si uno paga el hotel y el otro los vuelos, se compensa sin hacer cuentas.</span>
+          </div>
+          <div class="welcome-step">
+            <span class="welcome-step-num">3</span>
+            <span class="welcome-step-text">En <strong>🎯 Metas</strong> podéis ahorrar para algo concreto (un viaje, un sofá) y ver cuánto os falta.</span>
+          </div>
+        </div>
+        <p id="welcome-invite-hint" class="welcome-hint" hidden>Y no olvides invitar a tu pareja con el botón 🔗 de arriba — si no, estarás apuntando solo.</p>
+      </section>
 
       <!-- Total del mes -->
       <section class="card card-total">
@@ -754,7 +774,7 @@
 <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script><script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging-compat.js"></script><script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-<script defer src="firebase-config.js?v=20260818o"></script>
-<script defer src="app.js?v=20260818o"></script>
+<script defer src="firebase-config.js?v=20260818p"></script>
+<script defer src="app.js?v=20260818p"></script>
 </body>
 </html>

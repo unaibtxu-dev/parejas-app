@@ -1504,6 +1504,7 @@
     safe(renderMonthLabel, "renderMonthLabel");
     safe(renderTotal, "renderTotal");
     safe(renderQuickAdd, "renderQuickAdd");
+    safe(renderWelcomeCard, "renderWelcomeCard");
     safe(renderChart, "renderChart");
     safe(renderTrendChart, "renderTrendChart");
     safe(renderTopPlaces, "renderTopPlaces");
@@ -1518,6 +1519,25 @@
     safe(renderUpcomingPayments, "renderUpcomingPayments");
     safe(renderTripBanner, "renderTripBanner");
     safe(renderUserName, "renderUserName");
+  }
+
+  // Guía de primeros pasos. No hace falta guardar "ya la he visto": se muestra
+  // mientras el espacio no tenga ningún gasto y desaparece sola con el primero.
+  // Así no estorba a quien ya sabe usarla, y vuelve a salir si alguien empieza
+  // un espacio nuevo desde cero.
+  function renderWelcomeCard() {
+    var card = $("welcome-card");
+    if (!card) return;
+
+    var isGastos = state.mainTab === "conjunto" || state.mainTab === "personal";
+    var sinGastos = state.allExpenses.length === 0;
+    card.hidden = !isGastos || !sinGastos;
+    if (card.hidden) return;
+
+    // El aviso de invitar solo tiene sentido si aún estás solo en un espacio
+    // de pareja: en uno personal no hay a quién invitar.
+    var soloEnPareja = !isPersonalSpace() && (state.space.memberEmails || []).length < 2;
+    $("welcome-invite-hint").hidden = !soloEnPareja;
   }
 
   function renderMainPanels() {
@@ -1917,7 +1937,15 @@
 
     var half = computeDebtHalf();
     var textEl = $("debt-text");
-    if (Math.abs(half) < 0.01) {
+    // "Estáis en paz" y "todavía no habéis empezado" son cosas distintas: sin
+    // ningún gasto conjunto, decir que estáis en paz suena a que ya se ha
+    // calculado algo, y no explica para qué sirve esta pantalla.
+    var sinGastosConjuntos = debtExpenses().length === 0;
+
+    if (sinGastosConjuntos) {
+      textEl.textContent = "Aquí verás quién le debe a quién";
+      textEl.className = "debt-text empty";
+    } else if (Math.abs(half) < 0.01) {
       textEl.textContent = "Estáis en paz 🎉";
       textEl.className = "debt-text settled";
     } else if (half > 0) {
@@ -1933,9 +1961,10 @@
     debtExpenses().forEach(function (e) {
       if (totals.hasOwnProperty(e.payerEmail)) totals[e.payerEmail] += e.amount;
     });
-    $("debt-paid-summary").textContent =
-      PARTNERS[0].label + " ha pagado " + fmtMoney(totals[PARTNERS[0].email]) + " que cuenta para la deuda · " +
-      PARTNERS[1].label + " ha pagado " + fmtMoney(totals[PARTNERS[1].email]) + " que cuenta para la deuda";
+    $("debt-paid-summary").textContent = sinGastosConjuntos
+      ? "Apunta un gasto conjunto y el reparto al 50% se calcula solo, sin que nadie tenga que echar cuentas."
+      : PARTNERS[0].label + " ha pagado " + fmtMoney(totals[PARTNERS[0].email]) + " que cuenta para la deuda · " +
+        PARTNERS[1].label + " ha pagado " + fmtMoney(totals[PARTNERS[1].email]) + " que cuenta para la deuda";
 
     $("btn-settle-up").hidden = Math.abs(half) < 0.01;
 
@@ -2242,7 +2271,13 @@
     wrap.innerHTML = "";
 
     if (state.goals.length === 0) {
-      wrap.innerHTML = '<p class="empty-hint">Todavía no has creado ninguna meta.</p>';
+      wrap.innerHTML =
+        '<div class="card empty-explain">' +
+        '<span class="empty-explain-emoji">🎯</span>' +
+        '<p class="empty-explain-title">Ahorrad para algo concreto</p>' +
+        '<p class="empty-explain-text">Un viaje, un sofá, un colchón para imprevistos. Le pones cuánto quieres juntar y para cuándo, ' +
+        'y la app calcula lo que hay que apartar cada mes. Si es un viaje, además puede llevar el presupuesto aparte cuando estéis allí.</p>' +
+        '</div>';
       return;
     }
 
@@ -2744,7 +2779,13 @@
     wrap.innerHTML = "";
 
     if (state.loans.length === 0) {
-      wrap.innerHTML = '<p class="empty-hint">Todavía no has añadido ningún préstamo.</p>';
+      wrap.innerHTML =
+        '<div class="empty-explain">' +
+        '<span class="empty-explain-emoji">🏦</span>' +
+        '<p class="empty-explain-title">¿Tienes un préstamo?</p>' +
+        '<p class="empty-explain-text">Pon cuánto pediste, el interés y el plazo, y te dice cuándo acabas de pagarlo y cuánto ' +
+        'te costará en intereses. Y lo más útil: puedes simular qué pasaría si pagaras algo más cada mes.</p>' +
+        '</div>';
       return;
     }
 
