@@ -545,7 +545,66 @@
         '<span class="space-picker-sub">' + typeLabel + '</span>' +
         '</span>';
       btn.addEventListener("click", function () { enterSpace(space.id); });
-      wrap.appendChild(btn);
+
+      // Salir de un espacio: hacía falta de verdad — sin esto, un espacio
+      // creado por error se queda en la lista para siempre. Solo se quita TU
+      // acceso; si es en pareja, la otra persona lo conserva con sus datos.
+      var row = document.createElement("div");
+      row.className = "space-picker-row";
+      row.appendChild(btn);
+      var leave = document.createElement("button");
+      leave.type = "button";
+      leave.className = "space-leave-btn";
+      leave.title = "Salir de este espacio";
+      leave.textContent = "✕";
+      leave.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        promptLeaveSpace(space);
+      });
+      row.appendChild(leave);
+      wrap.appendChild(row);
+    });
+  }
+
+  function promptLeaveSpace(space) {
+    var isPareja = space.type === "pareja";
+    var label = space.name || (isPareja ? "este espacio en pareja" : "este espacio personal");
+    var warning = isPareja
+      ? "Saldrás de \"" + label + "\" y dejarás de ver sus gastos. La otra persona lo conservará con todo dentro. ¿Salir?"
+      : "Saldrás de \"" + label + "\" y perderás el acceso a todo lo que hay dentro. Esto no se puede deshacer. ¿Salir?";
+
+    showConfirm(warning).then(function (ok) {
+      if (!ok) return;
+      leaveSpace(space.id).then(function () {
+        showToast("Has salido de ese espacio.");
+        // Si te acabas de salir del espacio en el que estabas, hay que
+        // recolocar al usuario en otro sitio en vez de dejarlo dentro.
+        var wasCurrent = state.space && state.space.id === space.id;
+        if (wasCurrent) { unsubscribeAll(); state.space = null; }
+        resolveUserSpace(state.user.email);
+      }).catch(function (err) {
+        console.error(err);
+        showToast("No se ha podido salir del espacio.");
+      });
+    });
+  }
+
+  function leaveSpace(spaceId) {
+    var email = state.user.email;
+    // El orden importa: primero hay que salir de memberEmails (que es lo que
+    // usan las reglas de Firestore para dar acceso a los datos), y eso solo se
+    // puede hacer MIENTRAS sigues siendo miembro. Si solo se borrara la
+    // pertenencia, el espacio desaparecería de la lista pero seguirías
+    // teniendo permiso para leer y escribir sus gastos.
+    return db.collection("spaces").doc(spaceId).update({
+      memberEmails: firebase.firestore.FieldValue.arrayRemove(email)
+    }).then(function () {
+      // Estos dos ya no dependen de ser miembro, sino de que el email sea el
+      // tuyo, así que se pueden borrar después sin problema.
+      return Promise.all([
+        db.collection("memberships").doc(email).collection("spaces").doc(spaceId).delete(),
+        db.collection("spaces").doc(spaceId).collection("members").doc(email).delete()
+      ]);
     });
   }
 
@@ -653,6 +712,9 @@
       if (isPareja) writes.push(db.collection("invites").doc(code).set({ spaceId: spaceRef.id }));
       return Promise.all(writes);
     }).then(function () {
+      // Si no se limpia, al crear un segundo espacio el campo aún tendría el
+      // nombre del anterior y se colaría sin que te dieras cuenta.
+      if (nameInput) nameInput.value = "";
       if (isPareja) {
         showInviteCreatedScreen(spaceRef.id, code);
       } else {
@@ -2172,6 +2234,27 @@
           '</p>';
       }
 
+      // Los gastos del viaje están fuera de las cuentas normales del mes (es
+      // dinero ya apartado), así que este es el ÚNICO sitio donde se pueden
+      // ver y corregir. Sin esto quedaban invisibles: gastabas 180 € y no
+      // había forma de saber en qué, ni de borrar uno mal apuntado.
+      function tripExpensesHtml(goalId) {
+        var list = tripExpenses(goalId).slice().sort(function (a, b) { return b.date - a.date; });
+        if (!list.length) return '<p class="trip-expenses-empty">Todavía no habéis apuntado nada del viaje.</p>';
+        return '<ul class="trip-expenses-list">' + list.map(function (e) {
+          var cat = CATEGORY_BY_KEY[e.category] || CATEGORY_BY_KEY.otros;
+          return '<li>' +
+            '<span class="trip-exp-icon">' + cat.emoji + '</span>' +
+            '<span class="trip-exp-body">' +
+            '<span class="trip-exp-title">' + (escapeHtml(e.place) || escapeHtml(e.note) || cat.label) + '</span>' +
+            '<span class="trip-exp-sub">' + partnerLabel(e.payerEmail) + ' · ' + fmtDate(e.date) + '</span>' +
+            '</span>' +
+            '<span class="trip-exp-amount">' + fmtMoney(e.amount) + '</span>' +
+            '<button type="button" class="li-action-btn trip-exp-del" data-id="' + e.id + '" title="Eliminar">🗑️</button>' +
+            '</li>';
+        }).join("") + '</ul>';
+      }
+
       // Botón/estado del modo viaje: no empezado, en curso, o ya terminado.
       var tripBlock = "";
       if (g.category === "viaje") {
@@ -2183,10 +2266,14 @@
             '<div class="fund-progress-track"><div class="fund-progress-fill ' + (spent > g.tripBudget ? "over" : "") + '" style="width:' + tpct + '%"></div></div>' +
             '<p class="fund-goal-text">Gastado ' + fmtMoney(spent) + ' de ' + fmtMoney(g.tripBudget) +
             (spent > g.tripBudget ? ' — el exceso ya se ha repartido como gasto conjunto' : '') + '</p>' +
+            tripExpensesHtml(g.id) +
             '<button type="button" class="btn-secondary goal-end-trip" data-id="' + g.id + '">Terminar viaje</button>' +
             '</div>';
         } else if (g.tripEndedAt) {
-          tripBlock = '<p class="trip-status-title done">✅ Viaje terminado · gastasteis ' + fmtMoney(tripSpent(g.id)) + ' de ' + fmtMoney(g.tripBudget) + '</p>';
+          tripBlock = '<div class="trip-status-block">' +
+            '<p class="trip-status-title done">✅ Viaje terminado · gastasteis ' + fmtMoney(tripSpent(g.id)) + ' de ' + fmtMoney(g.tripBudget) + '</p>' +
+            tripExpensesHtml(g.id) +
+            '</div>';
         } else {
           var blockedByOther = activeTrip() && activeTrip().id !== g.id;
           tripBlock = '<button type="button" class="btn-secondary goal-start-trip" data-id="' + g.id + '"' +
@@ -2259,6 +2346,18 @@
       btn.addEventListener("click", function () {
         var goalItem = state.goals.find(function (g) { return g.id === btn.dataset.id; });
         if (goalItem) openGoalModalForEdit(goalItem);
+      });
+    });
+
+    wrap.querySelectorAll(".trip-exp-del").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        showConfirm("¿Eliminar este gasto del viaje? El dinero volverá a estar disponible en el bote.").then(function (ok) {
+          if (!ok) return;
+          deleteExpense(btn.dataset.id).catch(function (err) {
+            console.error(err);
+            showToast("No se ha podido eliminar.");
+          });
+        });
       });
     });
 

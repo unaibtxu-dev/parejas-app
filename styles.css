@@ -221,6 +221,30 @@ ul { list-style: none; margin: 0; padding: 0; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
+/* Fila del selector: el espacio + la X para salir de él */
+.space-picker-row { display: flex; align-items: stretch; gap: 6px; width: 100%; }
+.space-picker-row .space-picker-item { flex: 1; min-width: 0; }
+.space-leave-btn {
+  flex: 0 0 auto; border: none; background: var(--white); color: var(--gray);
+  border-radius: var(--radius-sm); width: 38px; font-size: 14px; font-weight: 800;
+  box-shadow: var(--shadow);
+}
+.space-leave-btn:active { background: var(--line); color: #D63447; }
+
+/* Gastos de un viaje: su único sitio visible, ya que están fuera del mes */
+.trip-expenses-list { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; }
+.trip-expenses-list li {
+  display: flex; align-items: center; gap: 9px;
+  padding: 8px 0; border-bottom: 1px solid var(--line);
+}
+.trip-expenses-list li:last-child { border-bottom: none; }
+.trip-exp-icon { font-size: 16px; flex-shrink: 0; }
+.trip-exp-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.trip-exp-title { font-size: 13px; font-weight: 800; color: var(--dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.trip-exp-sub { font-size: 11px; font-weight: 700; color: var(--gray); }
+.trip-exp-amount { font-size: 13px; font-weight: 800; color: var(--dark); flex-shrink: 0; }
+.trip-expenses-empty { font-size: 12px; font-weight: 700; color: var(--gray); margin: 4px 0 12px; }
+
 /* Copiar gastos fijos de otro espacio */
 #btn-open-import-fixed { width: 100%; }
 .import-fixed-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 4px; }
