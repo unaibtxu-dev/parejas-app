@@ -512,7 +512,7 @@
   function openSpacePicker(spaceIds) {
     Promise.all(spaceIds.map(function (id) {
       return db.collection("spaces").doc(id).get().then(function (doc) {
-        return doc.exists ? { id: doc.id, type: doc.data().type || "pareja" } : null;
+        return doc.exists ? { id: doc.id, type: doc.data().type || "pareja", name: doc.data().name || "" } : null;
       });
     })).then(function (spaces) {
       state.userSpaces = spaces.filter(Boolean);
@@ -533,11 +533,16 @@
       btn.type = "button";
       btn.className = "space-picker-item";
       var isPareja = space.type === "pareja";
+      // Si le has puesto nombre, ese manda y el tipo pasa a ser el subtítulo:
+      // con varios espacios del mismo tipo, "Espacio en pareja" repetido no
+      // distingue nada (era justo el problema que había con tres espacios).
+      var defaultTitle = isPareja ? "Espacio en pareja" : "Espacio personal";
+      var typeLabel = isPareja ? "Compartido con tu pareja" : "Solo para ti";
       btn.innerHTML =
         '<span class="space-picker-emoji">' + (isPareja ? "🤝" : "🙋") + '</span>' +
         '<span class="space-picker-body">' +
-        '<span class="space-picker-title">' + (isPareja ? "Espacio en pareja" : "Espacio personal") + '</span>' +
-        '<span class="space-picker-sub">' + (isPareja ? "Compartido con tu pareja" : "Solo para ti") + '</span>' +
+        '<span class="space-picker-title">' + escapeHtml(space.name || defaultTitle) + '</span>' +
+        '<span class="space-picker-sub">' + typeLabel + '</span>' +
         '</span>';
       btn.addEventListener("click", function () { enterSpace(space.id); });
       wrap.appendChild(btn);
@@ -570,7 +575,7 @@
       var data = doc.data();
       var previousType = state.space && state.space.type;
       var type = data.type === "personal" ? "personal" : "pareja";
-      state.space = { id: doc.id, memberEmails: data.memberEmails || [], inviteCode: data.inviteCode || "", type: type };
+      state.space = { id: doc.id, memberEmails: data.memberEmails || [], inviteCode: data.inviteCode || "", type: type, name: data.name || "" };
       // La primera vez que sabemos el tipo (o si cambia), nos aseguramos de
       // estar en una pestaña válida para ese tipo de espacio.
       if (previousType !== type) {
@@ -599,15 +604,42 @@
     }, { merge: true });
   }
 
+  // Nombre propio elegido a mano. Se guarda en el mismo campo "label" que ya
+  // usaba PARTNERS, así que al cambiarlo se actualiza solo en todas partes:
+  // gastos, deudas, presupuestos, historial de aportaciones...
+  function setMyDisplayName(name) {
+    return db.collection("spaces").doc(state.space.id).collection("members").doc(state.user.email).set({
+      email: state.user.email,
+      label: name
+    }, { merge: true });
+  }
+
+  function setSpaceName(name) {
+    return db.collection("spaces").doc(state.space.id).update({ name: name });
+  }
+
+  // El nombre que se ve arriba: el elegido a mano si existe, y si no el de
+  // Google como antes.
+  function myDisplayName() {
+    if (!state.user) return "Hola";
+    var mine = state.spaceMembers.find(function (m) { return m.email === state.user.email; });
+    if (mine && mine.label) return mine.label;
+    return firstName(state.user.displayName) || "Hola";
+  }
+
   function createSpace(type) {
     var user = state.user;
     var spaceRef = db.collection("spaces").doc();
     var isPareja = type !== "personal";
     var code = randomCode(6);
 
+    var nameInput = $("input-new-space-name");
+    var chosenName = nameInput ? nameInput.value.trim().slice(0, 30) : "";
+
     var data = {
       memberEmails: [user.email],
       type: isPareja ? "pareja" : "personal",
+      name: chosenName,
       createdBy: user.email,
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     };
@@ -911,6 +943,22 @@
   function renderAvatars() {
     if (state.user) $("user-avatar-emoji").textContent = getAvatar(state.user.email);
     safe(renderExpenseList, "renderExpenseList");
+  }
+
+  // Se llama en cada render porque el nombre elegido a mano llega de Firestore
+  // (asíncrono), después de que showApp() haya puesto el de Google.
+  function renderUserName() {
+    var el = $("user-name");
+    if (el) el.textContent = myDisplayName();
+    // Debajo del nombre se muestra en qué espacio estás — útil de verdad
+    // cuando tienes varios. Si no le has puesto nombre, se queda el saludo
+    // de siempre para que no haya un hueco vacío.
+    var spaceEl = $("space-name-label");
+    if (spaceEl) {
+      var name = state.space && state.space.name;
+      spaceEl.textContent = name || "¡hola! 👋";
+      spaceEl.hidden = false;
+    }
   }
 
   /* ============ Firestore: gastos fijos mensuales ============ */
@@ -1386,6 +1434,7 @@
     safe(renderInsights, "renderInsights");
     safe(renderFinancialPlan, "renderFinancialPlan");
     safe(renderTripBanner, "renderTripBanner");
+    safe(renderUserName, "renderUserName");
   }
 
   function renderMainPanels() {
@@ -3630,6 +3679,7 @@
       renderCalendar();
     });
     $("cal-close").addEventListener("click", closeCalendar);
+    $("cal-close-x").addEventListener("click", closeCalendar);
     $("calendar-dialog").querySelector("[data-calendar-close]").addEventListener("click", closeCalendar);
   }
 
@@ -3866,7 +3916,48 @@
     hidePlaceSuggestions();
   }
 
-  /* ============ Avatar picker ============ */
+  /* ============ Tu perfil: nombre, avatar y nombre del espacio ============ */
+
+  // Con quién has iniciado sesión. Útil de verdad si tienes varias cuentas de
+  // Google en el mismo navegador: así ves de un vistazo si estás en la que
+  // tocaba antes de apuntar algo en el espacio equivocado.
+  function renderProfileAccount() {
+    if (!state.user) return;
+    $("profile-account-avatar").textContent = getAvatar(state.user.email);
+    $("profile-account-name").textContent = myDisplayName();
+    $("profile-account-email").textContent = state.user.email;
+  }
+
+  // Los miembros del espacio con su nombre y correo. No es un problema de
+  // privacidad: solo se ve dentro de un espacio al que os habéis invitado
+  // mutuamente, y las reglas de Firestore impiden leerlo desde fuera.
+  function renderSpaceMembers() {
+    var block = $("space-members-block");
+    var list = $("space-members-list");
+    if (!block || !list) return;
+
+    if (!state.space) { block.hidden = true; return; }
+    var emails = state.space.memberEmails || [];
+    // En un espacio personal solo estás tú: la lista no aporta nada.
+    if (isPersonalSpace() || emails.length < 2) { block.hidden = true; return; }
+
+    block.hidden = false;
+    list.innerHTML = "";
+    emails.forEach(function (email) {
+      var info = state.spaceMembers.find(function (m) { return m.email === email; });
+      var label = (info && info.label) || firstName(email.split("@")[0]);
+      var isMe = state.user && email === state.user.email;
+      var row = document.createElement("div");
+      row.className = "space-member-row";
+      row.innerHTML =
+        '<span class="space-member-avatar">' + getAvatar(email) + '</span>' +
+        '<span class="space-member-info">' +
+        '<span class="space-member-name">' + escapeHtml(label) + (isMe ? ' <span class="space-member-you">(tú)</span>' : '') + '</span>' +
+        '<span class="space-member-email">' + escapeHtml(email) + '</span>' +
+        '</span>';
+      list.appendChild(row);
+    });
+  }
 
   function initAvatarPicker() {
     var grid = $("avatar-grid");
@@ -3878,11 +3969,16 @@
       btn.textContent = emoji;
       btn.addEventListener("click", function () {
         if (!state.user) return;
+        // Ya NO se cierra el modal al elegir avatar: ahora también hay
+        // nombres que editar aquí, y cerrarlo de golpe obligaba a volver a
+        // abrirlo para cambiar lo demás.
+        grid.querySelectorAll(".avatar-choice").forEach(function (el) {
+          el.classList.toggle("selected", el === btn);
+        });
         setAvatar(state.user.email, emoji).catch(function (err) {
           console.error(err);
           showToast("No se ha podido guardar el avatar.");
         });
-        $("avatar-picker").hidden = true;
       });
       grid.appendChild(btn);
     });
@@ -3891,8 +3987,40 @@
       grid.querySelectorAll(".avatar-choice").forEach(function (btn) {
         btn.classList.toggle("selected", state.user && btn.textContent === getAvatar(state.user.email));
       });
+      $("input-my-name").value = myDisplayName();
+      $("input-space-name").value = (state.space && state.space.name) || "";
+      $("space-name-block").hidden = !state.space;
+      renderProfileAccount();
+      renderSpaceMembers();
       $("avatar-picker").hidden = false;
     });
+
+    $("btn-save-my-name").addEventListener("click", function () {
+      var name = $("input-my-name").value.trim().slice(0, 20);
+      if (!name) { showToast("Escribe un nombre."); return; }
+      var btn = $("btn-save-my-name");
+      btn.disabled = true;
+      setMyDisplayName(name).then(function () {
+        showToast("¡Nombre guardado! 🎉");
+      }).catch(function (err) {
+        console.error(err);
+        showToast("No se ha podido guardar el nombre.");
+      }).finally(function () { btn.disabled = false; });
+    });
+
+    $("btn-save-space-name").addEventListener("click", function () {
+      if (!state.space) return;
+      var name = $("input-space-name").value.trim().slice(0, 30);
+      var btn = $("btn-save-space-name");
+      btn.disabled = true;
+      setSpaceName(name).then(function () {
+        showToast(name ? "¡Espacio renombrado! 🎉" : "Nombre del espacio quitado.");
+      }).catch(function (err) {
+        console.error(err);
+        showToast("No se ha podido guardar el nombre del espacio.");
+      }).finally(function () { btn.disabled = false; });
+    });
+
     $("avatar-cancel").addEventListener("click", function () { $("avatar-picker").hidden = true; });
     $("avatar-picker").querySelector("[data-avatar-cancel]").addEventListener("click", function () {
       $("avatar-picker").hidden = true;

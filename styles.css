@@ -178,6 +178,57 @@ ul { list-style: none; margin: 0; padding: 0; }
 .user-info { display: flex; flex-direction: column; min-width: 0; }
 .user-name { font-weight: 800; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .user-hello { font-size: 11px; color: var(--gray); }
+.space-name-label {
+  font-size: 11px; color: var(--gray); font-weight: 700;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px;
+}
+
+/* Nombre propio y del espacio dentro de "Tu perfil" */
+.profile-name-row { display: flex; gap: 8px; align-items: stretch; }
+.profile-name-row input {
+  flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--cream);
+  border-radius: var(--radius-sm); padding: 11px 12px; font-size: 14px; font-weight: 700;
+  color: var(--dark); outline: none; font-family: inherit;
+}
+.profile-name-row .btn-primary { flex: 0 0 auto; width: auto; padding: 11px 16px; font-size: 13px; }
+#avatar-picker .confirm-sheet { text-align: left; }
+#avatar-picker .confirm-message { text-align: center; }
+/* Cuenta con la que has iniciado sesión, dentro de "Tu perfil" */
+.profile-account {
+  display: flex; align-items: center; gap: 11px;
+  background: var(--cream); border-radius: var(--radius-sm); padding: 11px 13px; margin-bottom: 18px;
+}
+.profile-account-avatar { font-size: 26px; flex-shrink: 0; }
+.profile-account-info { display: flex; flex-direction: column; min-width: 0; }
+.profile-account-name { font-size: 14px; font-weight: 800; color: var(--dark); }
+.profile-account-email {
+  font-size: 11.5px; font-weight: 700; color: var(--gray);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* Miembros del espacio */
+.space-members-list { display: flex; flex-direction: column; gap: 8px; }
+.space-member-row {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--cream); border-radius: var(--radius-sm); padding: 9px 12px;
+}
+.space-member-avatar { font-size: 20px; flex-shrink: 0; }
+.space-member-info { display: flex; flex-direction: column; min-width: 0; }
+.space-member-name { font-size: 13px; font-weight: 800; color: var(--dark); }
+.space-member-you { font-weight: 700; color: var(--purple); font-size: 11.5px; }
+.space-member-email {
+  font-size: 11px; font-weight: 700; color: var(--gray);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* X de cerrar del calendario, arriba a la derecha */
+.calendar-close-x { position: absolute; top: 14px; right: 14px; z-index: 2; }
+
+.onboarding-space-name {
+  width: 100%; border: 1px solid var(--line); background: var(--white);
+  border-radius: var(--radius-sm); padding: 13px 14px; font-size: 15px; font-weight: 700;
+  color: var(--dark); outline: none; font-family: inherit; margin-bottom: 14px; text-align: center;
+}
 
 .month-switcher { display: flex; align-items: center; gap: 6px; }
 .month-btn {
