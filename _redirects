@@ -1,0 +1,10 @@
+# Reenvío interno del sistema de login de Firebase a nuestro propio dominio.
+#
+# Sin esto, el login vive en "parejas-app-bd42e.firebaseapp.com" y los
+# navegadores móviles bloquean el intercambio de datos entre ese dominio y el
+# nuestro, provocando el error "Unable to process request due to missing
+# initial state".
+#
+# El código 200 significa "sírvelo como si fuera mío" (proxy), no "redirige".
+/__/auth/*      https://parejas-app-bd42e.firebaseapp.com/__/auth/:splat      200
+/__/firebase/*  https://parejas-app-bd42e.firebaseapp.com/__/firebase/:splat  200

@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Gastos en Pareja</title>
+<meta name="description" content="Vuestros gastos, en tiempo real, entre los dos.">
+<meta name="theme-color" content="#FF6B9D">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E💸%3C/text%3E%3C/svg%3E">
+<link rel="manifest" href="manifest.json?v=20260818h">
+<link rel="apple-touch-icon" href="assets/icon-192.png?v=20260818h">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Gastos en Pareja">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+
+<link rel="stylesheet" href="styles.css?v=20260818h">
+</head>
+<body>
+
+<!-- ============ SPLASH / LOGIN ============ -->
+<div id="splash-screen" class="splash">
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+  <div class="blob blob-3"></div>
+
+  <div class="splash-content">
+    <div class="splash-emoji">💸</div>
+    <h1 class="splash-title">Gastos en Pareja</h1>
+    <p class="splash-tagline">En qué, dónde y cuándo se va el dinero — entre los dos.</p>
+
+    <button id="btn-google" class="btn-google">
+      <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.9 32.7 29.4 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.1 8 3l6-6C34.5 5.1 29.5 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21 21-9.4 21-21c0-1.4-.1-2.5-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.9 19 13 24 13c3.1 0 5.9 1.1 8 3l6-6C34.5 5.1 29.5 3 24 3c-7.7 0-14.3 4.3-17.7 10.7z"/><path fill="#4CAF50" d="M24 45c5.4 0 10.3-1.8 14-5l-6.5-5.4C29.6 36.1 26.9 37 24 37c-5.4 0-9.9-3.3-11.3-8l-6.6 5C9.6 40.6 16.2 45 24 45z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-1.1 3.2-3.3 5.8-6.2 7.3l6.5 5.4C39.5 37.4 45 31.4 45 24c0-1.4-.1-2.5-.4-3.5z"/></svg>
+      Entrar con Google
+    </button>
+
+    <p id="splash-error" class="splash-error" hidden></p>
+  </div>
+</div>
+
+<!-- ============ ONBOARDING: crear o unirse a un espacio ============ -->
+<div id="onboarding-screen" class="splash" hidden>
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+  <div class="blob blob-3"></div>
+
+  <div class="splash-content">
+    <div class="splash-emoji">🏠</div>
+    <h1 class="splash-title">¿Cómo quieres usarla?</h1>
+    <p class="splash-tagline">Puedes tener varios espacios con la misma cuenta — por ejemplo uno en pareja y otro solo para ti.</p>
+
+    <button id="btn-create-space-pareja" class="btn-google">🤝 Crear espacio en pareja</button>
+    <button id="btn-create-space-personal" class="btn-google" style="margin-top:12px;">🙋 Crear espacio personal</button>
+
+    <p class="onboarding-or">— o —</p>
+
+    <form id="form-join-space" class="onboarding-join-form">
+      <input id="input-join-code" type="text" placeholder="Código de invitación" autocomplete="off">
+      <button type="submit" class="btn-secondary">Unirme</button>
+    </form>
+
+    <p id="onboarding-error" class="splash-error" hidden></p>
+    <button id="btn-back-to-picker" class="btn-secondary" hidden style="margin-top:16px;">← Volver a mis espacios</button>
+  </div>
+</div>
+
+<!-- ============ ELEGIR ESPACIO: cuando tienes más de uno ============ -->
+<div id="space-picker-screen" class="splash" hidden>
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+  <div class="blob blob-3"></div>
+
+  <div class="splash-content">
+    <div class="splash-emoji">🔀</div>
+    <h1 class="splash-title">¿Cuál abrimos?</h1>
+    <p class="splash-tagline">Tienes varios espacios con esta cuenta.</p>
+
+    <div id="space-picker-list" class="space-picker-list"></div>
+
+    <button id="btn-add-another-space" class="btn-secondary" style="margin-top:16px;">➕ Añadir otro espacio</button>
+    <button id="btn-cancel-space-picker" class="btn-secondary" hidden style="margin-top:10px;">← Volver a la app</button>
+  </div>
+</div>
+
+<!-- ============ Espacio creado: mostrar el código para compartir ============ -->
+<div id="invite-created-screen" class="splash" hidden>
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+  <div class="blob blob-3"></div>
+
+  <div class="splash-content">
+    <div class="splash-emoji">🎉</div>
+    <h1 class="splash-title">¡Espacio creado!</h1>
+    <p class="splash-tagline">Comparte esto con tu pareja para que se una — se lo puedes mandar por WhatsApp o donde quieras.</p>
+
+    <div class="invite-box">
+      <span class="field-label">Código de invitación</span>
+      <span id="invite-code-display" class="link-chip">——————</span>
+    </div>
+    <div class="invite-box">
+      <span class="field-label">O este enlace directo</span>
+      <span id="invite-link-display" class="link-chip"></span>
+    </div>
+    <button id="btn-copy-invite" class="btn-secondary" style="margin-top:14px;">Copiar enlace</button>
+    <button id="btn-continue-to-app" class="btn-google" style="margin-top:12px;">Continuar a la app</button>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="app" class="app" hidden>
+
+  <header class="topbar">
+    <div class="topbar-user">
+      <button id="user-avatar-btn" class="user-avatar-btn" type="button" title="Cambiar tu avatar">
+        <span id="user-avatar-emoji">🙂</span>
+      </button>
+      <div class="user-info">
+        <span id="user-name" class="user-name"></span>
+        <span class="user-hello">¡hola! 👋</span>
+      </div>
+    </div>
+
+    <div class="month-switcher">
+      <button id="month-prev" class="month-btn" aria-label="Mes anterior">‹</button>
+      <button type="button" id="month-label-btn" class="month-label-wrap" aria-label="Ver el calendario del mes">
+        <span id="month-label" class="month-label">—</span>
+        <span class="month-calendar-emoji">📅</span>
+      </button>
+      <button id="month-next" class="month-btn" aria-label="Mes siguiente">›</button>
+    </div>
+
+    <button id="btn-notifications" class="btn-logout" aria-label="Activar notificaciones" title="Activar notificaciones">🔔</button>
+    <button id="btn-change-space" class="btn-logout" aria-label="Cambiar de espacio" title="Cambiar de espacio">🔀</button>
+    <button id="btn-show-invite" class="btn-logout" aria-label="Ver enlace de invitación" title="Ver enlace de invitación">🔗</button>
+    <button id="btn-logout" class="btn-logout" aria-label="Cerrar sesión" title="Cerrar sesión">⏏</button>
+  </header>
+
+  <!-- Aviso fijo mientras hay un viaje activo, visible en cualquier pestaña -->
+  <div id="trip-banner" class="trip-banner" hidden>
+    <span class="trip-banner-emoji">✈️</span>
+    <span class="trip-banner-text" id="trip-banner-text">—</span>
+    <button type="button" id="btn-end-trip" class="trip-banner-end">Terminar viaje</button>
+  </div>
+
+  <main class="main">
+
+    <!-- Pestañas principales -->
+    <nav class="main-tabs">
+      <button class="main-tab-btn active" data-maintab="conjunto" data-space-type="pareja">🤝 Compartido</button>
+      <button class="main-tab-btn" data-maintab="personal">🙋 Mío</button>
+      <button class="main-tab-btn" data-maintab="deudas" data-space-type="pareja">💸 Deudas</button>
+      <button class="main-tab-btn" data-maintab="prestamos" data-space-type="personal">🏦 Préstamos</button>
+      <button class="main-tab-btn" data-maintab="ahorros">🎯 Metas</button>
+    </nav>
+
+    <!-- ======= Panel: Gasto conjunto / Gasto personal ======= -->
+    <div id="panel-gastos" class="main-panel active">
+
+      <p id="personal-hello" class="personal-hello" hidden>Estás viendo el gasto personal de <strong id="personal-hello-name">—</strong></p>
+
+      <!-- Total del mes -->
+      <section class="card card-total">
+        <span id="card-total-label" class="card-total-label">Total compartido este mes</span>
+        <span id="total-amount" class="card-total-amount">0,00 €</span>
+        <div id="total-by-person" class="total-by-person"></div>
+      </section>
+
+      <!-- Accesos rápidos: gastos que repites, a un solo toque -->
+      <section id="quick-add-card" class="card" hidden>
+        <h2 class="card-title">Añadir rápido</h2>
+        <div id="quick-add-list" class="quick-add-list"></div>
+      </section>
+
+      <!-- Presupuesto del mes (solo pestaña personal) -->
+      <section id="budgets-card" class="card card-budgets" hidden>
+        <h2 class="card-title">Presupuesto del mes</h2>
+        <div id="budgets-list" class="budgets-list"></div>
+      </section>
+
+      <!-- Plan financiero: solo con 1-2 meses de historial real (pestaña personal) -->
+      <section id="financial-plan-card" class="card" hidden>
+        <h2 class="card-title">Tu plan financiero</h2>
+        <div id="financial-plan-body"></div>
+      </section>
+
+      <!-- Sub-tabs -->
+      <nav class="tabs">
+        <button class="tab-btn active" data-tab="resumen">📊 Resumen</button>
+        <button class="tab-btn" data-tab="mapa">🗺️ Mapa</button>
+        <button class="tab-btn" data-tab="lista">🧾 Gastos</button>
+      </nav>
+
+      <!-- Tab: Resumen -->
+      <section id="tab-resumen" class="tab-panel active">
+        <div class="card">
+          <h2 class="card-title">¿En qué se va?</h2>
+          <div class="chart-wrap">
+            <canvas id="category-chart" width="280" height="280"></canvas>
+            <div id="chart-empty" class="chart-empty" hidden>
+              <span class="chart-empty-emoji">🌱</span>
+              <span>Todavía no hay gastos este mes.<br>¡Añade el primero!</span>
+            </div>
+          </div>
+          <ul id="category-legend" class="category-legend"></ul>
+        </div>
+
+        <section id="insights-card" class="card" hidden>
+          <h2 class="card-title">Qué dicen tus números</h2>
+          <div id="insights-list" class="insights-list"></div>
+        </section>
+
+        <div class="card">
+          <h2 class="card-title">Top sitios</h2>
+          <ul id="top-places" class="top-places">
+            <li class="empty-hint">Aún no hay sitios registrados.</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h2 class="card-title">Evolución mensual</h2>
+          <canvas id="trend-chart" height="170"></canvas>
+        </div>
+      </section>
+
+      <!-- Tab: Mapa -->
+      <section id="tab-mapa" class="tab-panel">
+        <div class="card card-map">
+          <div class="card-map-header">
+            <h2 class="card-title">Dónde nos hemos gastado el dinero</h2>
+            <button id="btn-recenter-map" type="button" class="map-recenter-btn" title="Centrar en los sitios">🎯</button>
+          </div>
+          <div id="map" class="map"></div>
+        </div>
+      </section>
+
+      <!-- Tab: Lista -->
+      <section id="tab-lista" class="tab-panel">
+        <div class="card">
+          <div class="card-header-row">
+            <h2 class="card-title">Gastos del mes</h2>
+            <div class="card-header-actions">
+              <button id="btn-import-csv" type="button" class="btn-export-csv" title="Importar extracto del banco">⬆️ Importar</button>
+              <button id="btn-export-csv" type="button" class="btn-export-csv" title="Exportar a CSV">⬇️ CSV</button>
+            </div>
+          </div>
+          <ul id="expense-list" class="expense-list">
+            <li class="empty-hint">Aún no hay gastos este mes.</li>
+          </ul>
+        </div>
+      </section>
+    </div>
+
+    <!-- ======= Panel: Deudas entre nosotros ======= -->
+    <div id="panel-deudas" class="main-panel">
+      <section class="card card-debt">
+        <h2 class="card-title">Balance entre vosotros</h2>
+        <p id="debt-text" class="debt-text">—</p>
+        <p id="debt-paid-summary" class="debt-hint">—</p>
+        <p class="debt-hint">Se calcula con todo lo que cada uno ha pagado de gastos compartidos, repartido al 50%. Si uno paga el hotel y el otro los vuelos, se compensa solo.</p>
+        <div class="debt-actions">
+          <button id="btn-add-shared" type="button" class="btn-secondary">+ Añadir gasto compartido</button>
+          <button id="btn-settle-up" class="btn-primary" hidden>Marcar como saldado</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2 class="card-title">Historial de pagos para saldar</h2>
+        <ul id="settlement-list" class="expense-list">
+          <li class="empty-hint">Todavía no habéis saldado cuentas.</li>
+        </ul>
+      </section>
+    </div>
+
+    <!-- ======= Panel: Préstamos (uso personal) ======= -->
+    <div id="panel-prestamos" class="main-panel">
+      <section class="card">
+        <div class="card-header-row">
+          <h2 class="card-title">Tus préstamos</h2>
+          <button id="btn-add-loan" type="button" class="btn-secondary">+ Añadir préstamo</button>
+        </div>
+        <div id="loans-list" class="loans-list">
+          <p class="empty-hint">Todavía no has añadido ningún préstamo.</p>
+        </div>
+      </section>
+    </div>
+
+    <!-- ======= Panel: Metas de ahorro ======= -->
+    <div id="panel-ahorros" class="main-panel">
+      <section class="card">
+        <div class="card-header-row">
+          <h2 class="card-title">Tus metas</h2>
+          <button id="btn-add-goal" type="button" class="btn-secondary">+ Nueva meta</button>
+        </div>
+      </section>
+      <div id="goals-list">
+        <p class="empty-hint">Todavía no has creado ninguna meta.</p>
+      </div>
+    </div>
+
+  </main>
+
+  <button id="fab-add" class="fab-add" aria-label="Añadir gasto">+</button>
+</div>
+
+<!-- ============ MODAL: AÑADIR GASTO ============ -->
+<div id="modal-add" class="modal" hidden>
+  <div class="modal-backdrop" data-close></div>
+  <form id="form-add" class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header-row">
+      <h2 id="modal-title" class="modal-title">Nuevo gasto</h2>
+      <button type="button" class="modal-close-x" data-close aria-label="Cerrar">✕</button>
+    </div>
+
+    <label class="field-label" for="input-amount">¿Cuánto?</label>
+    <div class="amount-input-wrap">
+      <input id="input-amount" class="amount-input" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0" required autocomplete="off">
+      <span class="amount-suffix">€</span>
+    </div>
+
+    <div id="payer-field">
+      <label class="field-label">¿Quién paga?</label>
+      <div id="payer-picker" class="type-picker"></div>
+    </div>
+
+    <div id="type-field">
+      <label class="field-label">¿Conjunto o individual?</label>
+      <div id="type-picker" class="type-picker"></div>
+    </div>
+
+    <div id="affects-debt-field" hidden>
+      <label class="field-label">¿Cuenta para el balance de deudas?</label>
+      <div id="affects-debt-picker" class="type-picker"></div>
+    </div>
+
+    <div id="trip-expense-field" hidden>
+      <label class="field-label" id="trip-expense-label">¿Es del viaje?</label>
+      <div id="trip-expense-picker" class="type-picker"></div>
+    </div>
+
+    <label class="field-label">¿En qué?</label>
+    <div id="category-picker" class="category-picker"></div>
+
+    <label class="field-label" for="input-place">¿Dónde?</label>
+    <div class="place-input-wrap">
+      <input id="input-place" class="place-input" type="text" placeholder="Empieza a escribir el sitio..." autocomplete="off">
+      <button id="btn-locate" type="button" class="btn-locate" title="Sitios cerca de mí">📍</button>
+    </div>
+    <p id="place-suggestions-title" class="place-suggestions-title" hidden></p>
+    <ul id="place-suggestions" class="place-suggestions" hidden></ul>
+    <p id="locate-status" class="locate-status"></p>
+
+    <label class="field-label" for="input-date">¿Cuándo?</label>
+    <input id="input-date" class="date-input" type="datetime-local">
+
+    <label class="field-label" for="input-note">Nota (opcional)</label>
+    <input id="input-note" class="note-input" type="text" placeholder="Algo que recordar..." autocomplete="off">
+
+    <div class="modal-actions">
+      <button type="button" class="btn-secondary" data-close>Cancelar</button>
+      <button type="submit" id="btn-save" class="btn-primary">Guardar gasto</button>
+    </div>
+  </form>
+</div>
+
+<!-- ============ MODAL: AÑADIR / EDITAR PRÉSTAMO ============ -->
+<div id="modal-loan" class="modal" hidden>
+  <div class="modal-backdrop" data-close-loan></div>
+  <form id="form-loan" class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header-row">
+      <h2 id="modal-loan-title" class="modal-title">Nuevo préstamo</h2>
+      <button type="button" class="modal-close-x" data-close-loan aria-label="Cerrar">✕</button>
+    </div>
+
+    <label class="field-label" for="input-loan-name">¿Qué préstamo es?</label>
+    <input id="input-loan-name" type="text" placeholder="Hipoteca, coche, estudios..." autocomplete="off" required>
+
+    <label class="field-label" for="input-loan-original">¿Cuánto pediste al principio? <span class="field-label-optional">(opcional)</span></label>
+    <div class="amount-input-wrap">
+      <input id="input-loan-original" class="amount-input" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0">
+      <span class="amount-suffix">€</span>
+    </div>
+    <p class="field-hint">Poniendo esto, el plazo y el interés, calculamos solos cuánto te queda.</p>
+
+    <label class="field-label" for="input-loan-rate">Interés anual (TIN)</label>
+    <div class="amount-input-wrap">
+      <input id="input-loan-rate" class="amount-input" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0" required>
+      <span class="amount-suffix">%</span>
+    </div>
+
+    <label class="field-label" for="input-loan-term">Plazo total del préstamo</label>
+    <div class="amount-input-wrap">
+      <input id="input-loan-term" class="amount-input" type="number" inputmode="numeric" step="1" min="1" placeholder="Ej. 7">
+      <span class="amount-suffix" id="loan-term-suffix">años</span>
+    </div>
+    <div id="loan-term-unit-picker" class="type-picker" style="margin-top:8px;"></div>
+
+    <label class="field-label" for="input-loan-paid">Cuotas que ya llevas pagadas</label>
+    <div class="amount-input-wrap">
+      <input id="input-loan-paid" class="amount-input" type="number" inputmode="numeric" step="1" min="0" placeholder="0">
+      <span class="amount-suffix">cuotas</span>
+    </div>
+    <p class="field-hint">Si ya lo estabas pagando antes de usar la app, ponlo aquí y verás cuánto llevas avanzado.</p>
+
+    <label class="field-label" for="input-loan-principal">Cantidad pendiente ahora <span class="field-label-optional">(opcional)</span></label>
+    <div class="amount-input-wrap">
+      <input id="input-loan-principal" class="amount-input" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0">
+      <span class="amount-suffix">€</span>
+    </div>
+    <p class="field-hint">Déjala vacía si has puesto arriba cuánto pediste — si la rellenas, manda esta por si has hecho amortizaciones o tu interés ha cambiado (hipoteca variable).</p>
+
+    <label class="field-label" for="input-loan-payment">Cuota mensual</label>
+    <div class="amount-input-wrap">
+      <input id="input-loan-payment" class="amount-input" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0">
+      <span class="amount-suffix">€</span>
+    </div>
+    <p class="field-hint">Si no la sabes, déjala vacía y la calculamos con el plazo.</p>
+
+    <label class="field-label">¿Contar la cuota en tus gastos fijos del mes?</label>
+    <div id="loan-monthly-picker" class="type-picker"></div>
+
+    <div class="modal-actions">
+      <button type="button" class="btn-secondary" data-close-loan>Cancelar</button>
+      <button type="submit" id="btn-save-loan" class="btn-primary">Guardar préstamo</button>
+    </div>
+  </form>
+</div>
+
+<!-- ============ MODAL: AÑADIR / EDITAR META ============ -->
+<div id="modal-goal" class="modal" hidden>
+  <div class="modal-backdrop" data-close-goal></div>
+  <form id="form-goal" class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header-row">
+      <h2 id="modal-goal-title" class="modal-title">Nueva meta</h2>
+      <button type="button" class="modal-close-x" data-close-goal aria-label="Cerrar">✕</button>
+    </div>
+
+    <label class="field-label" for="input-goal-name">¿Qué meta es?</label>
+    <input id="input-goal-name" type="text" placeholder="Viaje a Roma, sofá nuevo..." autocomplete="off" required>
+
+    <label class="field-label">¿Qué tipo de meta es?</label>
+    <div id="goal-category-picker" class="type-picker"></div>
+
+    <label class="field-label" for="input-goal-date">¿Qué día empieza / lo necesitas? <span class="field-label-optional">(opcional)</span></label>
+    <input id="input-goal-date" class="date-input" type="date">
+    <p class="field-hint">Con esto podemos calcular cuánto ahorrar cada mes para llegar a tiempo.</p>
+
+    <div id="goal-trip-fields" hidden>
+      <label class="field-label" for="input-goal-hotel">Hotel / alojamiento <span class="field-label-optional">(opcional)</span></label>
+      <div class="amount-input-wrap">
+        <input id="input-goal-hotel" class="amount-input" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0">
+        <span class="amount-suffix">€</span>
+      </div>
+
+      <label class="field-label" for="input-goal-transport">Transporte (avión, tren, barco...) <span class="field-label-optional">(opcional)</span></label>
+      <div class="amount-input-wrap">
+        <input id="input-goal-transport" class="amount-input" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0">
+        <span class="amount-suffix">€</span>
+      </div>
+    </div>
+
+    <label class="field-label" for="input-goal-amount">¿Cuánto quieres llevar / objetivo total? <span class="field-label-optional">(opcional)</span></label>
+    <div class="amount-input-wrap">
+      <input id="input-goal-amount" class="amount-input" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0">
+      <span class="amount-suffix">€</span>
+    </div>
+    <p class="field-hint">Si la dejas vacía y has puesto hotel/transporte, sumamos esos dos.</p>
+
+    <div id="goal-shared-field">
+      <label class="field-label">¿Se paga entre los dos?</label>
+      <div id="goal-shared-picker" class="type-picker"></div>
+    </div>
+
+    <label class="field-label">¿Restar el ahorro de tus gastos fijos del mes?</label>
+    <div id="goal-monthly-picker" class="type-picker"></div>
+
+    <div class="modal-actions">
+      <button type="button" class="btn-secondary" data-close-goal>Cancelar</button>
+      <button type="submit" id="btn-save-goal" class="btn-primary">Guardar meta</button>
+    </div>
+  </form>
+</div>
+
+<!-- ============ MODAL: IMPORTAR EXTRACTO DEL BANCO ============ -->
+<div id="modal-import" class="modal" hidden>
+  <div class="modal-backdrop" data-close-import></div>
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header-row">
+      <h2 class="modal-title">Importar extracto</h2>
+      <button type="button" class="modal-close-x" data-close-import aria-label="Cerrar">✕</button>
+    </div>
+
+    <!-- Paso 1: elegir archivo y tipo -->
+    <div id="import-step-file">
+      <p class="field-hint" style="margin:0 0 14px;">Sube el CSV que exporta tu banco. Puedes subir uno de varios meses o de todo el año — cada gasto se guardará en su fecha real, no en el mes de hoy.</p>
+
+      <label class="field-label" for="input-import-file">Archivo CSV</label>
+      <input id="input-import-file" type="file" accept=".csv,text/csv" class="import-file-input">
+
+      <div id="import-type-field">
+        <label class="field-label">¿Este extracto es de gasto conjunto o individual?</label>
+        <div id="import-type-picker" class="type-picker"></div>
+      </div>
+
+      <p id="import-file-error" class="splash-error" hidden></p>
+    </div>
+
+    <!-- Paso 2: comprobar qué columna es cuál -->
+    <div id="import-step-mapping" hidden>
+      <p class="field-hint" style="margin:0 0 14px;">Cada banco llama distinto a sus columnas — comprueba que hemos adivinado bien.</p>
+      <label class="field-label" for="import-map-date">Columna de la fecha</label>
+      <select id="import-map-date" class="import-select"></select>
+      <label class="field-label" for="import-map-amount">Columna del importe</label>
+      <select id="import-map-amount" class="import-select"></select>
+      <label class="field-label" for="import-map-concept">Columna del concepto</label>
+      <select id="import-map-concept" class="import-select"></select>
+      <button type="button" id="btn-import-preview" class="btn-primary" style="margin-top:16px;">Continuar</button>
+      <p id="import-mapping-error" class="splash-error" hidden></p>
+    </div>
+
+    <!-- Paso 3: revisar gastos detectados + recurrentes -->
+    <div id="import-step-review" hidden>
+      <div id="import-recurring-block" hidden>
+        <p class="field-label" style="margin-top:0;">Esto se repite varios meses — ¿lo pasamos a gasto fijo?</p>
+        <div id="import-recurring-list" class="import-recurring-list"></div>
+      </div>
+
+      <p class="field-label" id="import-review-count">Gastos a importar</p>
+      <div id="import-preview-list" class="import-preview-list"></div>
+    </div>
+
+    <div id="import-step-actions" class="modal-actions" hidden>
+      <button type="button" class="btn-secondary" data-close-import>Cancelar</button>
+      <button type="button" id="btn-import-confirm" class="btn-primary">Importar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: TERMINAR VIAJE ============ -->
+<div id="end-trip-dialog" class="modal modal-center" hidden>
+  <div class="modal-backdrop" data-end-trip-cancel></div>
+  <div class="confirm-sheet">
+    <p class="confirm-message" id="end-trip-summary">—</p>
+    <div id="end-trip-leftover-block" hidden>
+      <p class="field-label" style="margin-top:0;">¿A qué meta mandamos lo que ha sobrado?</p>
+      <div id="end-trip-destination-list" class="space-picker-list"></div>
+    </div>
+    <div class="modal-actions" style="margin-top:16px;">
+      <button type="button" id="end-trip-cancel" class="btn-secondary">Cancelar</button>
+      <button type="button" id="end-trip-confirm" class="btn-primary">Terminar viaje</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ CALENDARIO DEL MES ============ -->
+<div id="calendar-dialog" class="modal modal-center" hidden>
+  <div class="modal-backdrop" data-calendar-close></div>
+  <div class="confirm-sheet calendar-sheet">
+    <div class="calendar-header">
+      <button type="button" id="cal-prev" class="month-btn" aria-label="Mes anterior">‹</button>
+      <span id="cal-title" class="calendar-title">—</span>
+      <button type="button" id="cal-next" class="month-btn" aria-label="Mes siguiente">›</button>
+    </div>
+
+    <div class="calendar-weekdays">
+      <span>L</span><span>M</span><span>X</span><span>J</span><span>V</span><span>S</span><span>D</span>
+    </div>
+    <div id="calendar-grid" class="calendar-grid"></div>
+
+    <div id="calendar-day-detail" class="calendar-day-detail" hidden></div>
+
+    <div class="calendar-legend">
+      <span class="cal-legend-item"><span class="cal-swatch level-low"></span>Gastaste menos</span>
+      <span class="cal-legend-item"><span class="cal-swatch level-mid"></span>Más de lo normal</span>
+      <span class="cal-legend-item"><span class="cal-swatch level-high"></span>Excesivo</span>
+    </div>
+    <div class="calendar-legend" id="calendar-legend-types">
+      <span class="cal-legend-item"><span class="cal-dot conjunto"></span>Conjunto</span>
+      <span class="cal-legend-item"><span class="cal-dot solo"></span>Solo</span>
+    </div>
+
+    <button type="button" id="cal-close" class="btn-secondary" style="margin-top:16px;">Cerrar</button>
+  </div>
+</div>
+
+<div id="confirm-dialog" class="modal modal-center" hidden>
+  <div class="modal-backdrop" data-confirm-cancel></div>
+  <div class="confirm-sheet">
+    <p id="confirm-message" class="confirm-message">—</p>
+    <div class="modal-actions">
+      <button type="button" id="confirm-cancel" class="btn-secondary">Cancelar</button>
+      <button type="button" id="confirm-ok" class="btn-primary confirm-danger">Eliminar</button>
+    </div>
+  </div>
+</div>
+
+<div id="avatar-picker" class="modal modal-center" hidden>
+  <div class="modal-backdrop" data-avatar-cancel></div>
+  <div class="confirm-sheet">
+    <p class="confirm-message">Elige tu avatar</p>
+    <div id="avatar-grid" class="avatar-grid"></div>
+    <button type="button" id="avatar-cancel" class="btn-secondary">Cerrar</button>
+  </div>
+</div>
+
+<div id="invite-view-dialog" class="modal modal-center" hidden>
+  <div class="modal-backdrop" data-invite-cancel></div>
+  <div class="confirm-sheet">
+    <p class="confirm-message">Vuestro código de invitación</p>
+    <div class="invite-box">
+      <span id="invite-view-code" class="link-chip">——————</span>
+    </div>
+    <div class="invite-box" style="margin-top:10px;">
+      <span id="invite-view-link" class="link-chip"></span>
+    </div>
+    <button type="button" id="btn-copy-invite-2" class="btn-primary" style="margin-top:16px;">Copiar enlace</button>
+    <button type="button" id="invite-view-close" class="btn-secondary" style="margin-top:10px;">Cerrar</button>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden>
+  <span id="toast-message"></span>
+  <button type="button" id="toast-action" class="toast-action" hidden></button>
+</div>
+
+<script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script><script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging-compat.js"></script><script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script defer src="firebase-config.js?v=20260818h"></script>
+<script defer src="app.js?v=20260818h"></script>
+</body>
+</html>

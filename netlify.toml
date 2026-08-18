@@ -1,0 +1,6 @@
+# Configuración de Netlify. El sitio es estático (los archivos de la raíz),
+# y esto añade la única pieza de servidor que necesita la app: la función
+# que envía las notificaciones push (netlify/functions/notify-expense.js).
+[build]
+  publish = "."
+  functions = "netlify/functions"

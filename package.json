@@ -1,0 +1,8 @@
+{
+  "name": "parejas-app",
+  "private": true,
+  "description": "Dependencias del servidor (Netlify Functions) — el sitio en sí no tiene build, es HTML/CSS/JS servidos tal cual.",
+  "dependencies": {
+    "firebase-admin": "^12.7.0"
+  }
+}

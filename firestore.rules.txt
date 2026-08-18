@@ -1,0 +1,121 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function inSpace(spaceId) {
+      return isSignedIn() &&
+        request.auth.token.email in
+          get(/databases/$(database)/documents/spaces/$(spaceId)).data.memberEmails;
+    }
+
+    // Puede leer/escribir un documento ya existente de este espacio.
+    function canAccessDoc() {
+      return inSpace(resource.data.spaceId);
+    }
+
+    // Puede crear un documento nuevo declarado para este espacio.
+    function canCreateDoc() {
+      return inSpace(request.resource.data.spaceId);
+    }
+
+    // ---- Espacios ----
+    match /spaces/{spaceId} {
+      // La lectura queda abierta a cualquiera con sesión: para unirte por
+      // invitación necesitas poder leer el espacio ANTES de ser miembro (para
+      // comprobar quién está ya dentro). Solo expone memberEmails/inviteCode/
+      // tipo, nada financiero — eso sigue protegido en las demás colecciones.
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() &&
+        request.resource.data.memberEmails == [request.auth.token.email];
+
+      // Solo se permite actualizar para: (a) ya ser miembro, o (b) unirte tú
+      // mismo añadiendo tu email al final de la lista (unirse por invitación,
+      // solo válido para espacios de tipo "pareja").
+      allow update: if isSignedIn() && (
+        request.auth.token.email in resource.data.memberEmails ||
+        (
+          resource.data.type == "pareja" &&
+          request.resource.data.memberEmails.size() == resource.data.memberEmails.size() + 1 &&
+          request.resource.data.memberEmails.hasAll(resource.data.memberEmails) &&
+          request.resource.data.memberEmails.hasAny([request.auth.token.email])
+        )
+      );
+
+      match /members/{email} {
+        allow read: if inSpace(spaceId);
+        allow write: if isSignedIn() && request.auth.token.email == email;
+      }
+    }
+
+    // ---- Código de invitación → espacio (solo lectura de "a qué espacio lleva") ----
+    match /invites/{code} {
+      allow read: if isSignedIn();
+      allow create, update: if inSpace(request.resource.data.spaceId);
+    }
+
+    // ---- Tus propios espacios (email → lista de spaceIds a los que perteneces) ----
+    match /memberships/{email} {
+      allow read: if isSignedIn() && request.auth.token.email == email;
+
+      match /spaces/{spaceId} {
+        allow read, write: if isSignedIn() && request.auth.token.email == email;
+      }
+    }
+
+    // ---- Datos de la app, todos con el mismo patrón ----
+    match /expenses/{docId} {
+      allow read, update, delete: if canAccessDoc();
+      allow create: if canCreateDoc();
+    }
+    match /budgets/{docId} {
+      allow read, update, delete: if canAccessDoc();
+      allow create: if canCreateDoc();
+    }
+    match /fixed_expenses/{docId} {
+      allow read, update, delete: if canAccessDoc();
+      allow create: if canCreateDoc();
+    }
+    match /settlements/{docId} {
+      allow read, update, delete: if canAccessDoc();
+      allow create: if canCreateDoc();
+    }
+    match /fund_contributions/{docId} {
+      allow read, update, delete: if canAccessDoc();
+      allow create: if canCreateDoc();
+    }
+    match /fund_goals/{docId} {
+      allow read, update, delete: if canAccessDoc();
+      allow create: if canCreateDoc();
+    }
+    match /profiles/{docId} {
+      allow read, update, delete: if canAccessDoc();
+      allow create: if canCreateDoc();
+    }
+    match /loans/{docId} {
+      allow read, update, delete: if canAccessDoc();
+      allow create: if canCreateDoc();
+    }
+    match /goals/{docId} {
+      allow read, update, delete: if canAccessDoc();
+      allow create: if canCreateDoc();
+    }
+    match /goal_contributions/{docId} {
+      allow read, update, delete: if canAccessDoc();
+      allow create: if canCreateDoc();
+    }
+
+    // ---- Tokens de notificaciones push ----
+    // Nadie necesita LEER estos tokens desde el cliente — ni siquiera el
+    // propio dueño. Solo el servidor (con la clave de administrador, que se
+    // salta estas reglas) los lee para mandar avisos. Aquí solo se controla
+    // quién puede crear/borrar el suyo.
+    match /push_tokens/{tokenId} {
+      allow create, update: if isSignedIn() && request.resource.data.email == request.auth.token.email;
+      allow delete: if isSignedIn() && resource.data.email == request.auth.token.email;
+    }
+  }
+}
