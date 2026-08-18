@@ -401,7 +401,10 @@ ul { list-style: none; margin: 0; padding: 0; }
 .fund-history li:last-child { border-bottom: none; }
 .fund-history .fh-who { font-weight: 800; }
 .fund-history .fh-when { color: var(--gray); font-size: 11px; margin-left: 6px; }
-.fund-history .fh-amount { font-weight: 800; color: var(--green); }
+.fund-history .fh-amount { font-weight: 800; color: var(--green); margin-left: auto; }
+.fund-history li { align-items: center; gap: 8px; }
+.fund-history .contrib-del { padding: 6px; min-width: 30px; min-height: 30px; font-size: 14px; flex-shrink: 0; }
+.settlement-del { flex-shrink: 0; }
 
 /* ============ Plan financiero ============ */
 .plan-line { font-size: 13px; font-weight: 700; color: var(--dark); margin: 0 0 8px; line-height: 1.5; }

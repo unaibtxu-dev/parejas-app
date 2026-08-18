@@ -1151,6 +1151,12 @@
     });
   }
 
+  // Deshacer un "saldado". Hacía falta: al pulsarlo sin querer, el balance
+  // entre los dos quedaba mal para siempre y no había forma de recuperarlo.
+  function deleteSettlement(id) {
+    return db.collection("settlements").doc(id).delete();
+  }
+
   /* ============ Firestore: metas de ahorro ============ */
   // Metas propias en vez de los dos fondos fijos de antes ("Viajes"/"Casa"):
   // cada una tiene nombre, un importe objetivo, y opcionalmente una fecha
@@ -1296,6 +1302,12 @@
       displayName: state.user.displayName || "",
       date: firebase.firestore.FieldValue.serverTimestamp()
     });
+  }
+
+  // Corregir una aportación mal escrita (200 € en vez de 20 €): sin esto se
+  // quedaba para siempre inflando el bote de la meta.
+  function deleteGoalContribution(id) {
+    return db.collection("goal_contributions").doc(id).delete();
   }
 
   function getGoalTotal(goalId) {
@@ -1930,8 +1942,23 @@
         '<span class="li-icon" style="background:var(--line)">✅</span>' +
         '<span class="li-body"><span class="li-title">' + escapeHtml(partnerLabel(s.payerEmail)) + ' pagó a ' + escapeHtml(partnerLabel(otherPartnerEmail(s.payerEmail))) + '</span>' +
         '<span class="li-sub">' + fmtDate(s.date) + '</span></span>' +
-        '<span class="li-amount">' + fmtMoney(s.amount) + '</span>';
+        '<span class="li-amount">' + fmtMoney(s.amount) + '</span>' +
+        '<button type="button" class="li-action-btn settlement-del" data-id="' + s.id + '" title="Deshacer este saldado">🗑️</button>';
       ul.appendChild(li);
+    });
+
+    ul.querySelectorAll(".settlement-del").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        showConfirm("¿Deshacer este pago? El balance entre vosotros volverá a contarlo como pendiente.").then(function (ok) {
+          if (!ok) return;
+          deleteSettlement(btn.dataset.id).then(function () {
+            showToast("Pago deshecho.");
+          }).catch(function (err) {
+            console.error(err);
+            showToast("No se ha podido deshacer.");
+          });
+        });
+      });
     });
   }
 
@@ -2309,7 +2336,9 @@
         (history.length === 0
           ? '<li class="empty-hint">Todavía no hay aportaciones.</li>'
           : history.map(function (c) {
-              return '<li><span><span class="fh-who">' + escapeHtml(firstName(c.displayName)) + '</span><span class="fh-when">' + fmtDate(c.date) + '</span></span><span class="fh-amount">+' + fmtMoney(c.amount) + '</span></li>';
+              return '<li><span><span class="fh-who">' + escapeHtml(firstName(c.displayName)) + '</span><span class="fh-when">' + fmtDate(c.date) + '</span></span>' +
+                '<span class="fh-amount">+' + fmtMoney(c.amount) + '</span>' +
+                '<button type="button" class="li-action-btn contrib-del" data-id="' + c.id + '" title="Eliminar esta aportación">🗑️</button></li>';
             }).join("")) +
         '</ul>';
       wrap.appendChild(card);
@@ -2346,6 +2375,20 @@
       btn.addEventListener("click", function () {
         var goalItem = state.goals.find(function (g) { return g.id === btn.dataset.id; });
         if (goalItem) openGoalModalForEdit(goalItem);
+      });
+    });
+
+    wrap.querySelectorAll(".contrib-del").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        showConfirm("¿Eliminar esta aportación? Se restará del total ahorrado en la meta.").then(function (ok) {
+          if (!ok) return;
+          deleteGoalContribution(btn.dataset.id).then(function () {
+            showToast("Aportación eliminada.");
+          }).catch(function (err) {
+            console.error(err);
+            showToast("No se ha podido eliminar.");
+          });
+        });
       });
     });
 
