@@ -25,8 +25,10 @@
 
   // Clave pública para las notificaciones push (Web Push / VAPID). Se genera
   // en Firebase Console → Configuración del proyecto → Cloud Messaging →
-  // pestaña "Configuración web" → "Generar par de claves". NO es secreta
-  // (es la parte pública), pero hasta que se rellene con la real, el botón
-  // de notificaciones simplemente no podrá activarse.
-  window.__FIREBASE_VAPID_KEY__ = "";
+  // pestaña "Configuración web" → "Generar par de claves".
+  //
+  // NO es secreta: viaja al navegador de todos los usuarios, así que cualquiera
+  // puede leerla. Es solo la mitad pública del par — la privada se queda en
+  // Firebase y es la que autoriza a enviar avisos.
+  window.__FIREBASE_VAPID_KEY__ = "BFh_AHuxpyGGy0RzyWX3pIk0SboxEJABaRd0nnmcxsSz_mT1yJ64mMtgByQbx3gMW8bQVrLGZevtuVcMA0bkjrs";
 })();

@@ -16,10 +16,21 @@
 
 const admin = require("firebase-admin");
 
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY))
-  });
+// Se inicializa dentro del handler y no al cargar el archivo: si la variable
+// de entorno falta o está mal pegada, así se puede devolver un mensaje que se
+// entienda en vez de que la función se caiga en seco con un error opaco.
+function ensureAdmin() {
+  if (admin.apps.length) return null;
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+  if (!raw) return "Falta la variable FIREBASE_SERVICE_ACCOUNT_KEY en Netlify.";
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    return "FIREBASE_SERVICE_ACCOUNT_KEY no es un JSON válido — pega el contenido entero del archivo .json, tal cual.";
+  }
+  admin.initializeApp({ credential: admin.credential.cert(parsed) });
+  return null;
 }
 
 const CATEGORY_LABELS = {
@@ -34,6 +45,12 @@ const CATEGORY_LABELS = {
 exports.handler = async function (event) {
   if (event.httpMethod !== "POST") {
     return { statusCode: 405, body: "Method not allowed" };
+  }
+
+  const configError = ensureAdmin();
+  if (configError) {
+    console.error(configError);
+    return { statusCode: 500, body: configError };
   }
 
   let body;
@@ -79,7 +96,18 @@ exports.handler = async function (event) {
     return { statusCode: 200, body: "Tu pareja no tiene notificaciones activadas" };
   }
 
-  const callerName = (callerEmail.split("@")[0] || "Alguien");
+  // El nombre que se muestra es el que la persona ha elegido en su perfil, no
+  // el trozo de su correo: sin esto el aviso decía "unaibtxu apuntó 45 €" en
+  // vez de "Unai apuntó 45 €".
+  let callerName = callerEmail.split("@")[0] || "Alguien";
+  try {
+    const memberDoc = await db.collection("spaces").doc(spaceId).collection("members").doc(callerEmail).get();
+    if (memberDoc.exists && memberDoc.data().label) callerName = memberDoc.data().label;
+  } catch (err) {
+    // Si falla, nos quedamos con el nombre del correo — no vale la pena
+    // perder el aviso entero por no poder leer una etiqueta.
+  }
+
   const catLabel = CATEGORY_LABELS[category] || CATEGORY_LABELS.otros;
   const amountStr = (Number(amount) || 0).toFixed(2).replace(".", ",") + " €";
 
