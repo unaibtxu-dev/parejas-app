@@ -3959,6 +3959,158 @@
     });
   }
 
+  /* ============ Copiar gastos fijos de otro espacio ============ */
+  // Los espacios están aislados a propósito (lo de Sofía no se mezcla con lo
+  // tuyo), pero eso obliga a reescribir a mano cosas que son iguales en los
+  // dos — el gimnasio, el coche... Esto los copia, sin moverlos: siguen
+  // estando también en el espacio de origen.
+
+  var importFixedContext = { fromSpaceId: null, items: [] };
+
+  function openImportFixedModal() {
+    importFixedContext = { fromSpaceId: null, items: [] };
+    $("import-fixed-step-space").hidden = false;
+    $("import-fixed-step-pick").hidden = true;
+    $("import-fixed-empty").hidden = true;
+    $("import-fixed-space-list").innerHTML = '<p class="empty-hint">Buscando...</p>';
+    $("modal-import-fixed").hidden = false;
+
+    listUserSpaceIds(state.user.email).then(function (ids) {
+      var others = ids.filter(function (id) { return id !== state.space.id; });
+      if (!others.length) {
+        $("import-fixed-space-list").innerHTML = "";
+        $("import-fixed-empty").hidden = false;
+        return;
+      }
+      // Solo se ofrecen los espacios que de verdad tienen gastos fijos: dar a
+      // elegir uno vacío para luego decir "no hay nada" sería marear.
+      return Promise.all(others.map(function (id) {
+        return Promise.all([
+          db.collection("spaces").doc(id).get(),
+          db.collection("fixed_expenses").where("spaceId", "==", id).get()
+        ]).then(function (r) {
+          if (!r[0].exists || r[1].empty) return null;
+          var d = r[0].data();
+          return {
+            id: id,
+            name: d.name || (d.type === "personal" ? "Espacio personal" : "Espacio en pareja"),
+            type: d.type || "pareja",
+            count: r[1].size
+          };
+        }).catch(function () { return null; });
+      })).then(function (spaces) {
+        var valid = spaces.filter(Boolean);
+        var wrap = $("import-fixed-space-list");
+        wrap.innerHTML = "";
+        if (!valid.length) { $("import-fixed-empty").hidden = false; return; }
+        valid.forEach(function (sp) {
+          var btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "space-picker-item";
+          btn.innerHTML =
+            '<span class="space-picker-emoji">' + (sp.type === "personal" ? "🙋" : "🤝") + '</span>' +
+            '<span class="space-picker-body">' +
+            '<span class="space-picker-title">' + escapeHtml(sp.name) + '</span>' +
+            '<span class="space-picker-sub">' + sp.count + (sp.count === 1 ? ' gasto fijo' : ' gastos fijos') + '</span>' +
+            '</span>';
+          btn.addEventListener("click", function () { loadFixedFromSpace(sp.id); });
+          wrap.appendChild(btn);
+        });
+      });
+    }).catch(function (err) {
+      console.error(err);
+      $("import-fixed-space-list").innerHTML = '<p class="empty-hint">No se han podido cargar tus espacios.</p>';
+    });
+  }
+
+  function loadFixedFromSpace(spaceId) {
+    importFixedContext.fromSpaceId = spaceId;
+    db.collection("fixed_expenses").where("spaceId", "==", spaceId).get().then(function (snap) {
+      // Lo que ya existe aquí con el mismo nombre se marca para no duplicar.
+      var existingLabels = state.fixedExpenses
+        .filter(function (f) { return f.email === state.user.email; })
+        .map(function (f) { return (f.label || "").toLowerCase().trim(); });
+
+      importFixedContext.items = snap.docs.map(function (d) {
+        var x = d.data();
+        var label = x.label || "";
+        return {
+          label: label,
+          amount: Number(x.amount) || 0,
+          category: x.category === "ahorro" ? "ahorro" : "gasto",
+          alreadyHere: existingLabels.indexOf(label.toLowerCase().trim()) !== -1,
+          include: existingLabels.indexOf(label.toLowerCase().trim()) === -1
+        };
+      });
+
+      var wrap = $("import-fixed-list");
+      wrap.innerHTML = "";
+      importFixedContext.items.forEach(function (item, idx) {
+        var row = document.createElement("label");
+        row.className = "import-fixed-row" + (item.alreadyHere ? " already" : "");
+        row.innerHTML =
+          '<input type="checkbox" data-idx="' + idx + '"' + (item.include ? " checked" : "") + '>' +
+          '<span class="import-fixed-icon">' + (item.category === "ahorro" ? "🐷" : "💸") + '</span>' +
+          '<span class="import-fixed-body">' +
+          '<span class="import-fixed-label">' + escapeHtml(item.label) + '</span>' +
+          (item.alreadyHere ? '<span class="import-fixed-sub">ya lo tienes aquí</span>' : '') +
+          '</span>' +
+          '<span class="import-fixed-amount">' + fmtMoney(item.amount) + '</span>';
+        row.querySelector("input").addEventListener("change", function (ev) {
+          importFixedContext.items[idx].include = ev.target.checked;
+        });
+        wrap.appendChild(row);
+      });
+
+      $("import-fixed-step-space").hidden = true;
+      $("import-fixed-step-pick").hidden = false;
+    }).catch(function (err) {
+      console.error(err);
+      showToast("No se han podido cargar los gastos fijos.");
+    });
+  }
+
+  function confirmImportFixed() {
+    var chosen = importFixedContext.items.filter(function (i) { return i.include; });
+    if (!chosen.length) { showToast("No has marcado ninguno."); return; }
+
+    var btn = $("btn-confirm-import-fixed");
+    btn.disabled = true;
+    var batch = db.batch();
+    chosen.forEach(function (item) {
+      var ref = db.collection("fixed_expenses").doc();
+      batch.set(ref, {
+        spaceId: state.space.id,
+        email: state.user.email,
+        label: item.label,
+        amount: item.amount,
+        category: item.category,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    });
+
+    batch.commit().then(function () {
+      $("modal-import-fixed").hidden = true;
+      showToast("¡Copiados " + chosen.length + " gasto" + (chosen.length > 1 ? "s" : "") + " fijo" + (chosen.length > 1 ? "s" : "") + "! 🎉");
+    }).catch(function (err) {
+      console.error(err);
+      showToast("No se han podido copiar.");
+    }).finally(function () {
+      btn.disabled = false;
+    });
+  }
+
+  function initImportFixedModal() {
+    $("btn-open-import-fixed").addEventListener("click", function () {
+      $("avatar-picker").hidden = true;
+      openImportFixedModal();
+    });
+    document.querySelectorAll("[data-close-import-fixed]").forEach(function (el) {
+      el.addEventListener("click", function () { $("modal-import-fixed").hidden = true; });
+    });
+    $("btn-confirm-import-fixed").addEventListener("click", confirmImportFixed);
+  }
+
   function initAvatarPicker() {
     var grid = $("avatar-grid");
     grid.innerHTML = "";
@@ -3992,6 +4144,7 @@
       $("space-name-block").hidden = !state.space;
       renderProfileAccount();
       renderSpaceMembers();
+      $("import-fixed-block").hidden = !state.space;
       $("avatar-picker").hidden = false;
     });
 
@@ -4283,6 +4436,7 @@
     safe(initCalendar, "initCalendar");
     safe(initModal, "initModal");
     safe(initAvatarPicker, "initAvatarPicker");
+    safe(initImportFixedModal, "initImportFixedModal");
     safe(initExpenseListActions, "initExpenseListActions");
     safe(initAddSharedButton, "initAddSharedButton");
     safe(initSettleUpButton, "initSettleUpButton");

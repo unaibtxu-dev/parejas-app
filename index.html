@@ -8,8 +8,8 @@
 <meta name="theme-color" content="#FF6B9D">
 
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E💸%3C/text%3E%3C/svg%3E">
-<link rel="manifest" href="manifest.json?v=20260818i">
-<link rel="apple-touch-icon" href="assets/icon-192.png?v=20260818i">
+<link rel="manifest" href="manifest.json?v=20260818j">
+<link rel="apple-touch-icon" href="assets/icon-192.png?v=20260818j">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Gastos en Pareja">
@@ -20,7 +20,7 @@
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 
-<link rel="stylesheet" href="styles.css?v=20260818i">
+<link rel="stylesheet" href="styles.css?v=20260818j">
 </head>
 <body>
 
@@ -644,7 +644,40 @@
       <p class="field-hint">Para distinguirlo cuando tengas varios espacios.</p>
     </div>
 
+    <div id="import-fixed-block" hidden>
+      <label class="field-label">Traer gastos fijos de otro espacio</label>
+      <p class="field-hint" style="margin:0 0 10px;">Cada espacio es independiente, así que los gastos fijos no se comparten. Aquí puedes copiarlos de otro sin volver a escribirlos.</p>
+      <button type="button" id="btn-open-import-fixed" class="btn-secondary">📥 Copiar gastos fijos de otro espacio</button>
+    </div>
+
     <button type="button" id="avatar-cancel" class="btn-secondary" style="margin-top:16px;">Cerrar</button>
+  </div>
+</div>
+
+<!-- ============ MODAL: COPIAR GASTOS FIJOS DE OTRO ESPACIO ============ -->
+<div id="modal-import-fixed" class="modal" hidden>
+  <div class="modal-backdrop" data-close-import-fixed></div>
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header-row">
+      <h2 class="modal-title">Copiar gastos fijos</h2>
+      <button type="button" class="modal-close-x" data-close-import-fixed aria-label="Cerrar">✕</button>
+    </div>
+
+    <div id="import-fixed-step-space">
+      <p class="field-hint" style="margin:0 0 12px;">¿De qué espacio los quieres traer?</p>
+      <div id="import-fixed-space-list" class="space-picker-list"></div>
+      <p id="import-fixed-empty" class="empty-hint" hidden>No tienes otros espacios con gastos fijos guardados.</p>
+    </div>
+
+    <div id="import-fixed-step-pick" hidden>
+      <p class="field-hint" style="margin:0 0 12px;">Marca los que quieras copiar aquí.</p>
+      <div id="import-fixed-list" class="import-fixed-list"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" data-close-import-fixed>Cancelar</button>
+        <button type="button" id="btn-confirm-import-fixed" class="btn-primary">Copiar</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -672,7 +705,7 @@
 <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script><script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging-compat.js"></script><script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-<script defer src="firebase-config.js?v=20260818i"></script>
-<script defer src="app.js?v=20260818i"></script>
+<script defer src="firebase-config.js?v=20260818j"></script>
+<script defer src="app.js?v=20260818j"></script>
 </body>
 </html>

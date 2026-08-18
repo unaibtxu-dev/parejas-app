@@ -221,6 +221,20 @@ ul { list-style: none; margin: 0; padding: 0; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
+/* Copiar gastos fijos de otro espacio */
+#btn-open-import-fixed { width: 100%; }
+.import-fixed-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 4px; }
+.import-fixed-row {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--cream); border-radius: var(--radius-sm); padding: 11px 13px;
+}
+.import-fixed-row.already { opacity: 0.6; }
+.import-fixed-icon { font-size: 17px; flex-shrink: 0; }
+.import-fixed-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.import-fixed-label { font-size: 13.5px; font-weight: 800; color: var(--dark); }
+.import-fixed-sub { font-size: 11px; font-weight: 700; color: var(--gray); }
+.import-fixed-amount { font-size: 13px; font-weight: 800; color: var(--dark); flex-shrink: 0; }
+
 /* X de cerrar del calendario, arriba a la derecha */
 .calendar-close-x { position: absolute; top: 14px; right: 14px; z-index: 2; }
 
