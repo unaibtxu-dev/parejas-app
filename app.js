@@ -105,6 +105,8 @@
     unsubProfiles: null,
     unsubLoans: null,
     swRegistration: null,
+    editingFixedId: null,
+    selectedFixedCategory: "gasto",
     editingGoalId: null,
     selectedGoalCategory: "viaje",
     selectedGoalShared: true,
@@ -1037,7 +1039,8 @@
           email: data.email,
           label: data.label || "",
           amount: data.amount || 0,
-          category: data.category === "ahorro" ? "ahorro" : "gasto"
+          category: data.category === "ahorro" ? "ahorro" : "gasto",
+          dueDay: Number(data.dueDay) || 0
         };
       });
       render();
@@ -1051,8 +1054,13 @@
       label: label,
       amount: amount,
       category: category === "ahorro" ? "ahorro" : "gasto",
+      dueDay: 0,
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
+  }
+
+  function updateFixedExpense(id, fields) {
+    return db.collection("fixed_expenses").doc(id).update(fields);
   }
 
   function deleteFixedExpense(id) {
@@ -1507,6 +1515,7 @@
     safe(renderLoans, "renderLoans");
     safe(renderInsights, "renderInsights");
     safe(renderFinancialPlan, "renderFinancialPlan");
+    safe(renderUpcomingPayments, "renderUpcomingPayments");
     safe(renderTripBanner, "renderTripBanner");
     safe(renderUserName, "renderUserName");
   }
@@ -3068,13 +3077,18 @@
               var icon = f.fromLoan ? "🏦" : (f.fromGoal ? "🎯" : (f.category === "ahorro" ? "🐷" : "💸"));
               var origin = f.fromLoan ? "cuota del préstamo" : (f.fromGoal ? "ahorro para la meta" : "");
               var lockTitle = f.fromLoan ? "Se gestiona en Préstamos" : "Se gestiona en Metas";
+              // El día de cobro se muestra como subtítulo cuando está puesto.
+              var sub = linked ? origin : (f.dueDay ? "día " + f.dueDay + " de cada mes" : "");
               return '<li' + (linked ? ' class="fe-from-loan"' : '') + '>' +
                 '<span class="fe-cat-icon">' + icon + '</span>' +
                 '<span class="fe-label">' + escapeHtml(f.label) +
-                (linked ? '<span class="fe-origin">' + origin + '</span>' : '') +
+                (sub ? '<span class="fe-origin">' + sub + '</span>' : '') +
                 '</span>' +
                 '<span class="fe-amount">' + fmtMoney(f.amount) + '</span>' +
-                (linked ? '<span class="fe-lock" title="' + lockTitle + '">🔒</span>' : '<button type="button" class="fe-del" data-id="' + f.id + '" title="Eliminar">✕</button>') +
+                (linked
+                  ? '<span class="fe-lock" title="' + lockTitle + '">🔒</span>'
+                  : '<button type="button" class="fe-edit" data-id="' + f.id + '" title="Editar">✏️</button>' +
+                    '<button type="button" class="fe-del" data-id="' + f.id + '" title="Eliminar">✕</button>') +
                 '</li>';
             }).join("")) +
         '</ul>' +
@@ -3098,6 +3112,13 @@
         picker.querySelectorAll(".fe-cat-btn").forEach(function (b) {
           b.classList.toggle("selected", b.dataset.cat === btn.dataset.cat);
         });
+      });
+    });
+
+    wrap.querySelectorAll(".fe-edit").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var item = state.fixedExpenses.find(function (f) { return f.id === btn.dataset.id; });
+        if (item) openFixedModal(item);
       });
     });
 
@@ -4101,6 +4122,126 @@
     });
   }
 
+  /* ============ Editar un gasto fijo ============ */
+  // Antes solo se podía crear y borrar: si el gimnasio subía de 70 a 75 € había
+  // que borrarlo y volver a escribirlo. Se hace en un modal, como préstamos y
+  // metas, y no en la propia fila, porque la lista se repinta cada vez que
+  // llega un cambio de Firestore y te borraría lo que estás escribiendo.
+
+  function initFixedCategoryPicker() {
+    var wrap = $("fixed-category-picker");
+    wrap.innerHTML = "";
+    [{ key: "gasto", label: "💸 Gasto" }, { key: "ahorro", label: "🐷 Ahorro" }].forEach(function (opt) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "type-chip" + (opt.key === state.selectedFixedCategory ? " selected" : "");
+      btn.dataset.key = opt.key;
+      btn.textContent = opt.label;
+      btn.addEventListener("click", function () {
+        state.selectedFixedCategory = opt.key;
+        wrap.querySelectorAll(".type-chip").forEach(function (el) {
+          el.classList.toggle("selected", el.dataset.key === opt.key);
+        });
+      });
+      wrap.appendChild(btn);
+    });
+  }
+
+  function openFixedModal(item) {
+    state.editingFixedId = item.id;
+    state.selectedFixedCategory = item.category;
+    $("input-fixed-label").value = item.label;
+    $("input-fixed-amount").value = item.amount;
+    $("input-fixed-dueday").value = item.dueDay || "";
+    initFixedCategoryPicker();
+    $("modal-fixed").hidden = false;
+  }
+
+  function initFixedModal() {
+    document.querySelectorAll("[data-close-fixed]").forEach(function (el) {
+      el.addEventListener("click", function () { $("modal-fixed").hidden = true; });
+    });
+
+    $("form-fixed").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      if (!state.editingFixedId) return;
+
+      var label = $("input-fixed-label").value.trim();
+      var amount = Math.round((parseFloat($("input-fixed-amount").value) || 0) * 100) / 100;
+      if (!label || amount <= 0) { showToast("Pon un nombre y un importe válido."); return; }
+
+      var dueDayRaw = parseInt($("input-fixed-dueday").value, 10);
+      var dueDay = (dueDayRaw >= 1 && dueDayRaw <= 31) ? dueDayRaw : 0;
+
+      var btn = $("btn-save-fixed");
+      btn.disabled = true;
+      updateFixedExpense(state.editingFixedId, {
+        label: label,
+        amount: amount,
+        category: state.selectedFixedCategory === "ahorro" ? "ahorro" : "gasto",
+        dueDay: dueDay
+      }).then(function () {
+        $("modal-fixed").hidden = true;
+        showToast("¡Gasto fijo actualizado! 🎉");
+      }).catch(function (err) {
+        console.error(err);
+        showToast("No se ha podido guardar.");
+      }).finally(function () { btn.disabled = false; });
+    });
+  }
+
+  /* ============ Próximos pagos ============ */
+  // Los gastos fijos con día de cobro se ordenan por cercanía. Si el día ya
+  // pasó este mes, cuenta para el mes que viene — así la lista siempre mira
+  // hacia delante y no se queda con avisos caducados.
+  function daysUntilDueDay(dueDay) {
+    var today = new Date();
+    var todayDay = today.getDate();
+    var daysInThisMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+    // Un "día 31" en un mes de 30 se entiende como el último día del mes.
+    var effective = Math.min(dueDay, daysInThisMonth);
+    if (effective >= todayDay) return effective - todayDay;
+    var daysLeftThisMonth = daysInThisMonth - todayDay;
+    var nextMonthDays = new Date(today.getFullYear(), today.getMonth() + 2, 0).getDate();
+    return daysLeftThisMonth + Math.min(dueDay, nextMonthDays);
+  }
+
+  function upcomingPayments(email) {
+    return fixedExpensesFor(email)
+      .filter(function (f) { return f.dueDay > 0; })
+      .map(function (f) {
+        return { label: f.label, amount: f.amount, category: f.category, dueDay: f.dueDay, days: daysUntilDueDay(f.dueDay) };
+      })
+      .sort(function (a, b) { return a.days - b.days; });
+  }
+
+  function renderUpcomingPayments() {
+    var card = $("upcoming-card");
+    if (!card) return;
+    if (state.mainTab !== "personal" || !state.user) { card.hidden = true; return; }
+
+    var list = upcomingPayments(state.user.email);
+    card.hidden = list.length === 0;
+    if (card.hidden) return;
+
+    var wrap = $("upcoming-list");
+    wrap.innerHTML = "";
+    list.forEach(function (p) {
+      var when = p.days === 0 ? "hoy" : (p.days === 1 ? "mañana" : "en " + p.days + " días");
+      var soon = p.days <= 3;
+      var row = document.createElement("div");
+      row.className = "upcoming-row" + (soon ? " soon" : "");
+      row.innerHTML =
+        '<span class="upcoming-icon">' + (p.category === "ahorro" ? "🐷" : "💸") + '</span>' +
+        '<span class="upcoming-body">' +
+        '<span class="upcoming-label">' + escapeHtml(p.label) + '</span>' +
+        '<span class="upcoming-when">' + when + ' · día ' + p.dueDay + '</span>' +
+        '</span>' +
+        '<span class="upcoming-amount">' + fmtMoney(p.amount) + '</span>';
+      wrap.appendChild(row);
+    });
+  }
+
   /* ============ Copiar gastos fijos de otro espacio ============ */
   // Los espacios están aislados a propósito (lo de Sofía no se mezcla con lo
   // tuyo), pero eso obliga a reescribir a mano cosas que son iguales en los
@@ -4579,6 +4720,7 @@
     safe(initModal, "initModal");
     safe(initAvatarPicker, "initAvatarPicker");
     safe(initImportFixedModal, "initImportFixedModal");
+    safe(initFixedModal, "initFixedModal");
     safe(initExpenseListActions, "initExpenseListActions");
     safe(initAddSharedButton, "initAddSharedButton");
     safe(initSettleUpButton, "initSettleUpButton");

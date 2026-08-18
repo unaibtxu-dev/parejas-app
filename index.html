@@ -8,8 +8,8 @@
 <meta name="theme-color" content="#FF6B9D">
 
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E💸%3C/text%3E%3C/svg%3E">
-<link rel="manifest" href="manifest.json?v=20260818l">
-<link rel="apple-touch-icon" href="assets/icon-192.png?v=20260818l">
+<link rel="manifest" href="manifest.json?v=20260818m">
+<link rel="apple-touch-icon" href="assets/icon-192.png?v=20260818m">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Gastos en Pareja">
@@ -20,7 +20,7 @@
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 
-<link rel="stylesheet" href="styles.css?v=20260818l">
+<link rel="stylesheet" href="styles.css?v=20260818m">
 </head>
 <body>
 
@@ -183,6 +183,12 @@
       <section id="budgets-card" class="card card-budgets" hidden>
         <h2 class="card-title">Presupuesto del mes</h2>
         <div id="budgets-list" class="budgets-list"></div>
+      </section>
+
+      <!-- Próximos pagos: gastos fijos con día de cobro (pestaña personal) -->
+      <section id="upcoming-card" class="card" hidden>
+        <h2 class="card-title">Próximos pagos</h2>
+        <div id="upcoming-list" class="upcoming-list"></div>
       </section>
 
       <!-- Plan financiero: solo con 1-2 meses de historial real (pestaña personal) -->
@@ -654,6 +660,42 @@
   </div>
 </div>
 
+<!-- ============ MODAL: EDITAR GASTO FIJO ============ -->
+<div id="modal-fixed" class="modal" hidden>
+  <div class="modal-backdrop" data-close-fixed></div>
+  <form id="form-fixed" class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header-row">
+      <h2 class="modal-title">Editar gasto fijo</h2>
+      <button type="button" class="modal-close-x" data-close-fixed aria-label="Cerrar">✕</button>
+    </div>
+
+    <label class="field-label" for="input-fixed-label">¿Qué es?</label>
+    <input id="input-fixed-label" type="text" placeholder="Ej. Gimnasio, alquiler..." autocomplete="off" maxlength="40" required>
+
+    <label class="field-label" for="input-fixed-amount">¿Cuánto al mes?</label>
+    <div class="amount-input-wrap">
+      <input id="input-fixed-amount" class="amount-input" type="number" inputmode="decimal" step="0.01" min="0" required>
+      <span class="amount-suffix">€</span>
+    </div>
+
+    <label class="field-label">¿Es un gasto o un ahorro?</label>
+    <div id="fixed-category-picker" class="type-picker"></div>
+
+    <label class="field-label" for="input-fixed-dueday">¿Qué día del mes se paga? <span class="field-label-optional">(opcional)</span></label>
+    <div class="amount-input-wrap">
+      <input id="input-fixed-dueday" class="amount-input" type="number" inputmode="numeric" step="1" min="1" max="31" placeholder="Ej. 1">
+      <span class="amount-suffix">del mes</span>
+    </div>
+    <p class="field-hint">Poniéndolo, te avisaremos cuando se acerque el cobro.</p>
+
+    <div class="modal-actions">
+      <button type="button" class="btn-secondary" data-close-fixed>Cancelar</button>
+      <button type="submit" id="btn-save-fixed" class="btn-primary">Guardar cambios</button>
+    </div>
+  </form>
+</div>
+
 <!-- ============ MODAL: COPIAR GASTOS FIJOS DE OTRO ESPACIO ============ -->
 <div id="modal-import-fixed" class="modal" hidden>
   <div class="modal-backdrop" data-close-import-fixed></div>
@@ -705,7 +747,7 @@
 <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script><script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging-compat.js"></script><script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-<script defer src="firebase-config.js?v=20260818l"></script>
-<script defer src="app.js?v=20260818l"></script>
+<script defer src="firebase-config.js?v=20260818m"></script>
+<script defer src="app.js?v=20260818m"></script>
 </body>
 </html>
