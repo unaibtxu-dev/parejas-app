@@ -1464,23 +1464,15 @@
     return state.allExpenses.filter(function (e) { return !e.tripGoalId; });
   }
 
+  // El cálculo en sí vive en debt-calc.js (probado con node:test, ver
+  // /test/debt-calc.test.js) para poder testearlo sin `state` ni Firestore.
+  // Aquí solo se le pasan los datos reales de la app.
   function debtExpenses() {
-    return visibleExpenses().filter(function (e) { return e.type === "conjunto" && e.affectsDebt; });
+    return DebtCalc.debtExpenses(visibleExpenses());
   }
 
   function computeDebtHalf() {
-    var totals = {};
-    PARTNERS.forEach(function (p) { totals[p.email] = 0; });
-    debtExpenses().forEach(function (e) {
-      if (totals.hasOwnProperty(e.payerEmail)) totals[e.payerEmail] += e.amount;
-    });
-    var diff = totals[PARTNERS[0].email] - totals[PARTNERS[1].email];
-    var half = diff / 2;
-    state.settlements.forEach(function (s) {
-      if (s.payerEmail === PARTNERS[0].email) half += s.amount;
-      else if (s.payerEmail === PARTNERS[1].email) half -= s.amount;
-    });
-    return Math.round(half * 100) / 100;
+    return DebtCalc.computeDebtHalf(visibleExpenses(), state.settlements, PARTNERS);
   }
 
   /* ============ Rendering ============ */

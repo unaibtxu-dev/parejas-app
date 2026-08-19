@@ -1,0 +1,49 @@
+Índices propuestos para las dos consultas nuevas de `subscribeExpenses()`
+(ver PHASE1_MIO_NUESTRO_Y_PRIVACIDAD.md, sección 5). Referencia únicamente —
+NO se ha publicado. Cuando llegue la Fase 8, este es el contenido a copiar
+en Firestore → Índices → Añadir índice (o a un firestore.indexes.json real
+si en algún momento se adopta Firebase CLI).
+
+1) Consulta A — gastos compartidos del espacio
+   db.collection("expenses").where("spaceId","==",spaceId).where("type","!=","individual")
+
+   Necesita índice compuesto porque combina una igualdad (spaceId) con una
+   desigualdad sobre otro campo (type) — Firestore no lo indexa solo.
+
+2) Consulta B — gastos individuales propios
+   db.collection("expenses").where("spaceId","==",spaceId).where("type","==","individual").where("uid","==",myUid)
+
+   Es una combinación de solo igualdades (spaceId, type, uid) sin ningún
+   orderBy adicional — Firestore la soporta con los índices automáticos de
+   campo único, SIN necesitar un índice compuesto manual. La incluyo aquí
+   solo para que quede completo el registro, no porque haga falta crearla.
+   Si al probar en un proyecto real Firestore pidiera igualmente un índice
+   (a veces ocurre si el proyecto tiene reglas de indexado personalizadas),
+   dará un enlace directo en el error de consola para crearlo con un clic.
+
+--------------------------------------------------------------------------
+Contenido equivalente en formato firestore.indexes.json, por si en algún
+momento se despliega vía Firebase CLI en lugar de pegarlo a mano:
+
+{
+  "indexes": [
+    {
+      "collectionGroup": "expenses",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "spaceId", "order": "ASCENDING" },
+        { "fieldPath": "type", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "expenses",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "spaceId", "order": "ASCENDING" },
+        { "fieldPath": "type", "order": "ASCENDING" },
+        { "fieldPath": "uid", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
