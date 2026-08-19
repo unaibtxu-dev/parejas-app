@@ -166,12 +166,15 @@ En espacio personal, `state.unsubExpensesShared` nunca se crea (queda `null`/no 
 
 En ambos casos, además: `uid` del documento debe coincidir con `request.auth.uid` (nadie puede crear un gasto adjudicándoselo a otra persona), y el espacio debe reconocer al creador como miembro (regla `inSpace` de siempre).
 
+**Ajuste Fase 3 (ver PHASE3_ECONOMIC_SPLIT_DESIGN.md, punto 5): `payerEmail` también debe pertenecer a `space.memberEmails`.** No solo la identidad de quien escribe (`uid`) importa — quien la app dice que *pagó* también es un dato de integridad económica (entra directamente en `computeBalanceCents`), así que no tiene sentido permitir un `payerEmail` ajeno al espacio.
+
 ```
 function canCreateExpense(data) {
   let space = get(/databases/$(database)/documents/spaces/$(data.spaceId)).data;
   return isSignedIn() &&
     request.auth.token.email in space.memberEmails &&
     data.uid == request.auth.uid &&
+    data.payerEmail in space.memberEmails &&
     (
       (space.type == "pareja"   && data.type == "conjunto")   ||
       (space.type == "personal" && data.type == "individual")
@@ -200,7 +203,8 @@ function canUpdateExpense(oldData, newData) {
     (oldData.type != "individual" || oldData.uid == request.auth.uid) &&
     newData.uid == oldData.uid &&
     newData.spaceId == oldData.spaceId &&
-    newData.type == oldData.type;
+    newData.type == oldData.type &&
+    newData.payerEmail in space.memberEmails;
 }
 ```
 
@@ -210,7 +214,8 @@ Revisé los 13 campos del documento de gasto ([app.js:920-934](parejas-app/app.j
 
 - **`uid` y `spaceId`: inmutables.** Son los dos únicos campos que cualquier regla de esta colección usa para decidir permisos (quién eres, a qué espacio perteneces). Permitir cambiarlos mediante `update` anularía por completo el resto de la protección — es exactamente el hueco que señalas.
 - **`type`: inmutable, en cualquier tipo de espacio** (ajuste del 19/08/2026, ver 5.4) — se usa para autorización en espacios pareja, y por simplicidad se bloquea igual en espacios personales aunque ahí no hiciera falta.
-- **`payerEmail`, `email`, `displayName`, `photoURL`, `amount`, `category`, `place`, `note`, `lat`, `lng`, `expenseDate`, `tripGoalId`, `affectsDebt`, `createdAt`: siguen totalmente editables, sin cambios.** Ninguno de ellos aparece en ninguna condición de ninguna regla de esta colección — confirmado revisando `firestore.rules.txt` completo, no solo el bloque de `expenses`. En particular, `payerEmail` no protege nada y no necesita bloquearse (sí se sigue pudiendo corregir "quién pagó" desde la pestaña Deudas, como ya funciona hoy).
+- **`payerEmail`: editable, pero con una restricción de contenido, no de inmutabilidad** (ajuste Fase 3) — se puede seguir corrigiendo "quién pagó" desde la pestaña Deudas como hasta ahora, pero el nuevo valor debe seguir perteneciendo a `space.memberEmails`. No es un campo inmutable como `uid`/`spaceId`/`type` (esos no pueden cambiar a ningún otro valor); `payerEmail` sí puede cambiar, solo que el conjunto de valores válidos está acotado.
+- **`email`, `displayName`, `photoURL`, `amount`, `category`, `place`, `note`, `lat`, `lng`, `expenseDate`, `tripGoalId`, `affectsDebt`, `createdAt`: siguen totalmente editables, sin cambios.** Ninguno de ellos aparece en ninguna condición de ninguna regla de esta colección — confirmado revisando `firestore.rules.txt` completo, no solo el bloque de `expenses`.
 
 ### 5.6 Reglas — `read` y `delete`
 
@@ -243,6 +248,7 @@ function canCreateExpense(data) {
   return isSignedIn() &&
     request.auth.token.email in space.memberEmails &&
     data.uid == request.auth.uid &&
+    data.payerEmail in space.memberEmails &&
     (
       (space.type == "pareja"   && data.type == "conjunto")   ||
       (space.type == "personal" && data.type == "individual")
@@ -256,8 +262,12 @@ function canUpdateExpense(oldData, newData) {
     (oldData.type != "individual" || oldData.uid == request.auth.uid) &&
     newData.uid == oldData.uid &&
     newData.spaceId == oldData.spaceId &&
-    newData.type == oldData.type;
+    newData.type == oldData.type &&
+    newData.payerEmail in space.memberEmails;
 }
+
+// La validación de economicSplit (Fase 3) se añade con un && más sobre
+// canCreateExpense/canUpdateExpense — ver PHASE3_ECONOMIC_SPLIT_DESIGN.md.
 
 match /expenses/{docId} {
   allow read, delete: if canAccessExpense(resource.data);
