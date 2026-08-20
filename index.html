@@ -8,8 +8,8 @@
 <meta name="theme-color" content="#FF6B9D">
 
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E💸%3C/text%3E%3C/svg%3E">
-<link rel="manifest" href="manifest.json?v=20260820a">
-<link rel="apple-touch-icon" href="assets/icon-192.png?v=20260820a">
+<link rel="manifest" href="manifest.json?v=20260822a">
+<link rel="apple-touch-icon" href="assets/icon-192.png?v=20260822a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Gastos en Pareja">
@@ -20,7 +20,7 @@
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 
-<link rel="stylesheet" href="styles.css?v=20260820a">
+<link rel="stylesheet" href="styles.css?v=20260822a">
 </head>
 <body>
 
@@ -214,6 +214,12 @@
       <section id="upcoming-card" class="card" hidden>
         <h2 class="card-title">Próximos pagos</h2>
         <div id="upcoming-list" class="upcoming-list"></div>
+      </section>
+
+      <!-- Nómina: MVP solo informativo, aparece tras confirmar un ingreso detectado al importar (pestaña personal) -->
+      <section id="payroll-card" class="card" hidden>
+        <h2 class="card-title">Tu nómina</h2>
+        <div id="payroll-card-body"></div>
       </section>
 
       <!-- Plan financiero: solo con 1-2 meses de historial real (pestaña personal) -->
@@ -562,8 +568,8 @@
     <div id="import-step-file">
       <p class="field-hint" style="margin:0 0 14px;">Sube el CSV que exporta tu banco. Puedes subir uno de varios meses o de todo el año — cada gasto se guardará en su fecha real, no en el mes de hoy.</p>
 
-      <label class="field-label" for="input-import-file">Archivo CSV</label>
-      <input id="input-import-file" type="file" accept=".csv,text/csv" class="import-file-input">
+      <label class="field-label" for="input-import-file">Archivo CSV o Excel</label>
+      <input id="input-import-file" type="file" accept=".csv,text/csv,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" class="import-file-input">
 
       <div id="import-type-field">
         <label class="field-label">¿Este extracto es de gasto conjunto o individual?</label>
@@ -716,7 +722,7 @@
 
     <div id="feedback-block">
       <label class="field-label">Sugerencias</label>
-      <p class="field-hint" style="margin:0 0 10px;">¿Echas algo en falta o hay algo que no va bien? Cuéntanoslo.</p>
+      <p class="field-hint" style="margin:0 0 10px;">Esta versión está en beta. Si algo no cuadra, cuéntanoslo.</p>
       <div id="feedback-type-picker" class="type-picker"></div>
       <textarea id="input-feedback" class="feedback-textarea" rows="3" maxlength="2000" placeholder="Me gustaría poder..."></textarea>
       <button type="button" id="btn-send-feedback" class="btn-primary feedback-send">Enviar</button>
@@ -823,13 +829,31 @@
   <button type="button" id="toast-action" class="toast-action" hidden></button>
 </div>
 
+<!-- Formulario estático SOLO para que Netlify detecte el esquema de campos
+     en el despliegue (nunca se muestra ni se envía tal cual) -- el envío
+     real lo hace sendFeedback() en app.js con fetch(), sin navegar fuera de
+     la app. El correo de destino NO se fija aquí: se configura en el panel
+     de Netlify (Site settings → Forms → notifications), nunca en el
+     frontend. -->
+<form name="feedback" data-netlify="true" netlify-honeypot="bot-field" hidden>
+  <input type="hidden" name="form-name" value="feedback">
+  <input name="bot-field">
+  <input type="text" name="comentario">
+  <input type="text" name="tipo">
+  <input type="email" name="email">
+  <input type="text" name="pestana">
+  <input type="text" name="espacio">
+  <input type="text" name="fecha">
+</form>
+
 <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script><script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging-compat.js"></script><script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-<script defer src="firebase-config.js?v=20260820a"></script>
-<script defer src="debt-calc.js?v=20260820a"></script>
-<script defer src="csv-import.js?v=20260820a"></script>
-<script defer src="app.js?v=20260820a"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script defer src="firebase-config.js?v=20260822a"></script>
+<script defer src="debt-calc.js?v=20260822a"></script>
+<script defer src="csv-import.js?v=20260822a"></script>
+<script defer src="app.js?v=20260822a"></script>
 </body>
 </html>

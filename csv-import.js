@@ -158,6 +158,44 @@
     return -1;
   }
 
+  // Misma detección de cabecera que detectHeaderRowIndex(), pero para filas
+  // que YA vienen partidas en celdas (una hoja de Excel no tiene texto ni
+  // delimitador que partir -- SheetJS ya entrega array de arrays). Así el
+  // XLSX reutiliza exactamente el mismo criterio de cabecera que el CSV, en
+  // vez de tener su propia heurística por separado.
+  function buildHeaderedTableFromRows(rows) {
+    var limit = Math.min(rows.length, 20);
+    for (var i = 0; i < limit; i++) {
+      var cells = rows[i] || [];
+      var nonEmpty = cells.filter(function (c) { return (c || "").trim() !== ""; });
+      if (nonEmpty.length < 2) continue;
+      if (cells.filter(isRecognizedColumnName).length >= 2) {
+        return { headers: cells, rows: rows.slice(i + 1), headerDetected: true };
+      }
+    }
+    var width = rows.length ? rows[0].length : 0;
+    var headers = [];
+    for (var w = 0; w < width; w++) headers.push("Columna " + (w + 1));
+    return { headers: headers, rows: rows, headerDetected: false };
+  }
+
+  // Un libro de Excel puede tener varias hojas (movimientos, resumen,
+  // gráficos...) -- se elige la PRIMERA con una cabecera reconocible; si
+  // ninguna la tiene, se recae en la primera hoja con cabeceras genéricas
+  // (misma recuperación que un CSV sin cabecera), nunca se deja sin elegir
+  // ninguna.
+  function pickBestXlsxTable(sheets) {
+    for (var i = 0; i < sheets.length; i++) {
+      var table = buildHeaderedTableFromRows(sheets[i].rows || []);
+      if (table.headerDetected) {
+        return { sheetName: sheets[i].name, headers: table.headers, rows: table.rows, headerDetected: true };
+      }
+    }
+    var first = sheets[0] || { name: "", rows: [] };
+    var fallback = buildHeaderedTableFromRows(first.rows || []);
+    return { sheetName: first.name, headers: fallback.headers, rows: fallback.rows, headerDetected: false };
+  }
+
   // Entrada principal del pipeline de texto -> filas. Si no se detecta
   // ninguna cabecera con suficiente confianza en las primeras líneas, NO se
   // inventa una -- se generan nombres genéricos ("Columna 1", "Columna 2"...)
@@ -306,6 +344,18 @@
   ];
   var REIMBURSEMENT_KEYWORDS = ["devolucion", "devolución", "reembolso", "abono comercio"];
 
+  // Nómina — MVP solo informativo (ver app.js, isPersonalSpace() +
+  // showConfirm()): esto NUNCA clasifica ni auto-marca nada por sí solo,
+  // solo dice si el CONCEPTO sugiere que un ingreso ya clasificado como
+  // "income" podría ser una nómina, para poder preguntarle a la persona.
+  // Un ingreso grande sin esta palabra nunca se trata como nómina.
+  var PAYROLL_KEYWORDS = ["nomina", "nómina", "salario", "salary", "payroll", "sueldo"];
+
+  function looksLikePayroll(concept) {
+    var c = (concept || "").toLowerCase();
+    return PAYROLL_KEYWORDS.some(function (k) { return c.indexOf(k) !== -1; });
+  }
+
   function classifyRow(concept, amount, sign) {
     var c = (concept || "").toLowerCase();
     if (amount === 0) return "ignore";
@@ -396,7 +446,8 @@
       parsed.push({
         date: date, amount: amountAbs, signedAmount: amount, concept: concept,
         classification: classification, fingerprint: fingerprint,
-        duplicateInFile: false, duplicateInHistory: false
+        duplicateInFile: false, duplicateInHistory: false,
+        looksLikePayroll: looksLikePayroll(concept)
       });
     });
 
@@ -420,6 +471,9 @@
     controlCharRatio: controlCharRatio,
     decodeCsvBytes: decodeCsvBytes,
     detectDelimiter: detectDelimiter,
+    buildHeaderedTableFromRows: buildHeaderedTableFromRows,
+    pickBestXlsxTable: pickBestXlsxTable,
+    looksLikePayroll: looksLikePayroll,
     parseLine: parseLine,
     COLUMN_KEYWORDS: COLUMN_KEYWORDS,
     detectHeaderRowIndex: detectHeaderRowIndex,

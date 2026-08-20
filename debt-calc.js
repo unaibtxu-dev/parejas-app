@@ -312,6 +312,14 @@
     return keys.every(function (k) { return k === key || averages[k] <= averages[key]; });
   }
 
+  // Nómina -- MVP solo informativo: restante teórico = importe de la última
+  // nómina marcada - gastos personales posteriores a su fecha. Nunca
+  // proyecta la siguiente nómina ni toca presupuestos/mes natural (eso
+  // queda fuera de esta ronda a propósito, ver app.js).
+  function payrollRemaining(markAmount, spentSince) {
+    return markAmount - spentSince;
+  }
+
   return {
     isDebtExpense: isDebtExpense,
     debtExpenses: debtExpenses,
@@ -333,6 +341,7 @@
 
     sumFixedExpenses: sumFixedExpenses,
     projectEndOfMonth: projectEndOfMonth,
-    otrosIsBiggestCategory: otrosIsBiggestCategory
+    otrosIsBiggestCategory: otrosIsBiggestCategory,
+    payrollRemaining: payrollRemaining
   };
 });

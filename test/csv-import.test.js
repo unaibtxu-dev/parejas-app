@@ -22,6 +22,9 @@ const {
   cleanConceptForDisplay,
   computeFingerprint,
   markHistoricDuplicates,
+  buildHeaderedTableFromRows,
+  pickBestXlsxTable,
+  looksLikePayroll,
 } = require("../csv-import.js");
 
 // ---- A) CSV normal con cabecera en primera línea ----
@@ -264,4 +267,78 @@ test("controlCharRatio: contenido binario da una proporción alta", () => {
   var binaryish = "PK" + String.fromCharCode(3, 4, 0, 1, 2, 5, 6, 7, 8, 11, 14, 15) + "resto de basura binaria";
   const ratio = controlCharRatio(binaryish);
   assert.ok(ratio > 0.02, "ratio=" + ratio);
+});
+
+// ---- XLSX: mismo criterio de cabecera que el CSV, para hojas ya partidas
+// en celdas (lo que entrega SheetJS con {header:1}) ----
+
+test("buildHeaderedTableFromRows: cabecera reconocible en la primera fila", () => {
+  const rows = [["Fecha", "Concepto", "Importe"], ["01/08/2026", "MERCADONA", "-45,30"]];
+  const t = buildHeaderedTableFromRows(rows);
+  assert.equal(t.headerDetected, true);
+  assert.deepEqual(t.headers, ["Fecha", "Concepto", "Importe"]);
+  assert.equal(t.rows.length, 1);
+});
+
+test("buildHeaderedTableFromRows: preámbulo antes de la cabecera (como una hoja de resumen pegada encima)", () => {
+  const rows = [
+    ["Extracto generado el 01/08/2026", "", ""],
+    ["", "", ""],
+    ["Data", "Concepte", "Import"],
+    ["01/08/2026", "MERCADONA", "-45,30"],
+  ];
+  const t = buildHeaderedTableFromRows(rows);
+  assert.equal(t.headerDetected, true);
+  assert.deepEqual(t.headers, ["Data", "Concepte", "Import"]);
+  assert.equal(t.rows.length, 1);
+});
+
+test("buildHeaderedTableFromRows: sin cabecera reconocible -> Columna N, sin perder la primera fila", () => {
+  const rows = [["01/08/2026", "MERCADONA", "-45,30"]];
+  const t = buildHeaderedTableFromRows(rows);
+  assert.equal(t.headerDetected, false);
+  assert.deepEqual(t.headers, ["Columna 1", "Columna 2", "Columna 3"]);
+  assert.equal(t.rows.length, 1);
+});
+
+test("pickBestXlsxTable: varias hojas -> elige la primera con cabecera reconocible, no la primera hoja a ciegas", () => {
+  const sheets = [
+    { name: "Resumen", rows: [["Gráfico de gastos", ""], ["", ""]] },
+    { name: "Movimientos", rows: [["Fecha", "Concepto", "Importe"], ["01/08/2026", "MERCADONA", "-45,30"]] },
+  ];
+  const t = pickBestXlsxTable(sheets);
+  assert.equal(t.sheetName, "Movimientos");
+  assert.equal(t.headerDetected, true);
+});
+
+test("pickBestXlsxTable: ninguna hoja con cabecera reconocible -> recae en la primera", () => {
+  const sheets = [
+    { name: "Hoja1", rows: [["01/08/2026", "MERCADONA", "-45,30"]] },
+    { name: "Hoja2", rows: [["02/08/2026", "CARREFOUR", "-12,00"]] },
+  ];
+  const t = pickBestXlsxTable(sheets);
+  assert.equal(t.sheetName, "Hoja1");
+  assert.equal(t.headerDetected, false);
+});
+
+// ---- Nómina (MVP informativo): solo detecta por palabra clave en el
+// concepto, nunca por ser un importe grande ----
+
+test("looksLikePayroll: reconoce nomina/salario/payroll en ES/EN, sin acento y con acento", () => {
+  assert.equal(looksLikePayroll("NOMINA EMPRESA SA"), true);
+  assert.equal(looksLikePayroll("Pago de nómina agosto"), true);
+  assert.equal(looksLikePayroll("SALARY XYZ CORP"), true);
+  assert.equal(looksLikePayroll("Transferencia sueldo"), true);
+});
+
+test("looksLikePayroll: un ingreso grande sin la palabra clave no cuenta como nómina", () => {
+  assert.equal(looksLikePayroll("TRANSFERENCIA DE JUAN"), false);
+  assert.equal(looksLikePayroll(""), false);
+});
+
+test("buildParsedRows anota looksLikePayroll por fila, independiente de la clasificación", () => {
+  const rows = [["01/08/2026", "NOMINA EMPRESA", "1500,00"]];
+  const { parsed } = buildParsedRows(rows, MAPPING, "negative");
+  assert.equal(parsed[0].classification, "income");
+  assert.equal(parsed[0].looksLikePayroll, true);
 });

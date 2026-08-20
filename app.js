@@ -114,6 +114,8 @@
     unsubGoalContributions: null,
     unsubProfiles: null,
     unsubLoans: null,
+    unsubPayrollMarks: null,
+    payrollMarks: [],
     swRegistration: null,
     editingFixedId: null,
     selectedFixedCategory: "gasto",
@@ -457,7 +459,8 @@
   function unsubscribeAll() {
     [
       "unsubSpace", "unsubSpaceMembers", "unsubExpenses", "unsubBudgets", "unsubFixedExpenses",
-      "unsubSettlements", "unsubGoals", "unsubGoalContributions", "unsubProfiles", "unsubLoans"
+      "unsubSettlements", "unsubGoals", "unsubGoalContributions", "unsubProfiles", "unsubLoans",
+      "unsubPayrollMarks"
     ].forEach(function (key) {
       if (state[key]) { state[key](); state[key] = null; }
     });
@@ -640,6 +643,7 @@
     subscribeExpenses(spaceId);
     subscribeBudgets(spaceId);
     subscribeFixedExpenses(spaceId);
+    subscribePayrollMarks(spaceId);
     subscribeSettlements(spaceId);
     subscribeGoals(spaceId);
     subscribeGoalContributions(spaceId);
@@ -1202,6 +1206,64 @@
       .filter(Boolean);
   }
 
+  /* ============ Nómina -- MVP solo informativo ============ */
+  // Feedback beta: un solo dato mínimo por marca (importe + fecha), nunca
+  // se auto-detecta por importe -- solo tras confirmar explícitamente que
+  // un ingreso concreto (ya visto en un CSV/Excel importado) es la nómina.
+  // A propósito NO cambia el mes natural, NO toca presupuestos ni
+  // proyecta la siguiente -- solo informa: última nómina, gastado desde
+  // entonces, restante teórico. Solo tiene sentido en Personal (no hay
+  // "nómina conjunta").
+
+  function subscribePayrollMarks(spaceId) {
+    state.unsubPayrollMarks = db.collection("payroll_marks")
+      .where("spaceId", "==", spaceId)
+      .onSnapshot(function (snapshot) {
+        state.payrollMarks = snapshot.docs.map(function (doc) {
+          var data = doc.data();
+          var d = data.date && data.date.toDate ? data.date.toDate() : new Date();
+          return { id: doc.id, email: data.email, amount: data.amount || 0, date: d };
+        }).sort(function (a, b) { return b.date - a.date; });
+        render();
+      }, function (err) { console.error(err); });
+  }
+
+  function addPayrollMark(email, amount, date) {
+    return db.collection("payroll_marks").add({
+      spaceId: state.space.id,
+      email: email,
+      amount: amount,
+      date: date,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  }
+
+  // "Debe poder corregirse/desmarcarse" -- borrar la marca, no un campo de
+  // estado: así no queda un "no es nómina" que haya que interpretar en
+  // ningún otro sitio, simplemente deja de haber una marca.
+  function deletePayrollMark(id) {
+    return db.collection("payroll_marks").doc(id).delete();
+  }
+
+  function latestPayrollMarkFor(email) {
+    return state.payrollMarks.filter(function (m) { return m.email === email; })[0] || null;
+  }
+
+  function buildPayrollInfo(email) {
+    var mark = latestPayrollMarkFor(email);
+    if (!mark) return null;
+    var spentSince = state.allExpenses
+      .filter(function (e) { return e.type === "individual" && e.payerEmail === email && e.date > mark.date; })
+      .reduce(function (sum, e) { return sum + e.amount; }, 0);
+    return {
+      markId: mark.id,
+      amount: mark.amount,
+      date: mark.date,
+      spentSince: spentSince,
+      remaining: DebtCalc.payrollRemaining(mark.amount, spentSince)
+    };
+  }
+
   /* ============ Firestore: deudas / pagos ============ */
 
   function subscribeSettlements(spaceId) {
@@ -1585,6 +1647,7 @@
     safe(renderLoans, "renderLoans");
     safe(renderInsights, "renderInsights");
     safe(renderFinancialPlan, "renderFinancialPlan");
+    safe(renderPayrollCard, "renderPayrollCard");
     safe(renderUpcomingPayments, "renderUpcomingPayments");
     safe(renderTripBanner, "renderTripBanner");
     safe(renderUserName, "renderUserName");
@@ -2831,6 +2894,34 @@
     };
   }
 
+  // Nómina -- MVP solo informativo, ver subscribePayrollMarks/
+  // maybePromptPayrollMark. Solo Personal -- no proyecta la siguiente
+  // nómina, no toca presupuestos ni el mes natural (a propósito, fuera de
+  // alcance de esta ronda).
+  function renderPayrollCard() {
+    var card = $("payroll-card");
+    if (!card) return;
+    if (state.mainTab !== "personal" || !state.user) { card.hidden = true; return; }
+    var info = buildPayrollInfo(state.user.email);
+    if (!info) { card.hidden = true; return; }
+    card.hidden = false;
+    $("payroll-card-body").innerHTML =
+      '<p class="plan-line">💰 Última nómina: <strong>' + fmtMoney(info.amount) + '</strong> <span class="plan-sub">(' + fmtDate(info.date) + ')</span></p>' +
+      '<p class="plan-line">📊 Gastado desde entonces: <strong>' + fmtMoney(info.spentSince) + '</strong></p>' +
+      '<p class="plan-line ' + (info.remaining < 0 ? "plan-warn" : "plan-ok") + '">' +
+      (info.remaining < 0 ? "⚠️ Te has pasado " + fmtMoney(-info.remaining) : "🟢 Restante teórico: " + fmtMoney(info.remaining)) + '</p>' +
+      '<button type="button" id="btn-payroll-unmark" class="btn-secondary" style="margin-top:10px;">No es mi nómina / desmarcar</button>';
+    $("btn-payroll-unmark").addEventListener("click", function () {
+      showConfirm("¿Desmarcar esta nómina? Dejará de mostrarse este resumen.").then(function (ok) {
+        if (!ok) return;
+        deletePayrollMark(info.markId).catch(function (err) {
+          console.error(err);
+          showToast("No se ha podido desmarcar.");
+        });
+      });
+    });
+  }
+
   function renderFinancialPlan() {
     var card = $("financial-plan-card");
     if (!card) return;
@@ -3998,12 +4089,43 @@
 
     batch.commit().then(function () {
       showImportSummary(toImport, importBatchId);
+      maybePromptPayrollMark();
     }).catch(function (err) {
       console.error(err);
       showToast("No se ha podido importar. Inténtalo otra vez.");
     }).finally(function () {
       btn.disabled = false;
       btn.textContent = "Importar";
+    });
+  }
+
+  // Nómina -- MVP informativo (ver subscribePayrollMarks arriba). Se mira en
+  // TODAS las filas del preview, no solo las importadas como gasto (los
+  // ingresos nunca se guardan como gasto) -- la primera que parezca nómina
+  // (CsvImport.looksLikePayroll, nunca solo por ser un importe grande) y
+  // aún no tenga una marca guardada para ese mismo mes/importe se pregunta
+  // UNA vez. Solo en Personal -- no hay "nómina conjunta".
+  function maybePromptPayrollMark() {
+    if (!isPersonalSpace() || !state.user) return;
+    var candidate = importContext.parsed.filter(function (r) {
+      return r.classification === "income" && r.looksLikePayroll;
+    })[0];
+    if (!candidate) return;
+    var alreadyMarked = state.payrollMarks.some(function (m) {
+      return m.email === state.user.email &&
+        Math.abs(m.amount - candidate.amount) < 0.01 &&
+        isSameMonth(m.date, candidate.date);
+    });
+    if (alreadyMarked) return;
+    showConfirm("Hemos visto un ingreso de " + fmtMoney(candidate.amount) + " el " + fmtDate(candidate.date) +
+      " que parece tu nómina. ¿Este ingreso es tu nómina?").then(function (ok) {
+      if (!ok) return;
+      addPayrollMark(state.user.email, candidate.amount, candidate.date).then(function () {
+        showToast("Nómina guardada. La verás en tu resumen personal.");
+      }).catch(function (err) {
+        console.error(err);
+        showToast("No se ha podido guardar la nómina.");
+      });
     });
   }
 
@@ -4029,16 +4151,61 @@
       var errEl = $("import-file-error");
       errEl.hidden = true;
 
-      // El selector de archivo limita a .csv, pero eso no lo hacen cumplir
-      // todos los sistemas (ni el arrastrar y soltar) — un Excel de verdad
-      // (.xlsx/.xls) es en realidad un ZIP binario, y leerlo como texto
-      // produce basura. Fuera de alcance soportarlo (ver
-      // PHASE_CSV_GENERIC.md) — rechazo explícito, no se intenta parsear.
+      // .xlsx/.xls es en realidad un ZIP con XML dentro -- leerlo como texto
+      // (como hace el camino CSV de abajo) produce basura, así que se
+      // procesa aparte con SheetJS (100% local, nunca sale del navegador).
+      // A partir de ahí se reutiliza EXACTAMENTE el mismo pipeline que el
+      // CSV (guessColumnMapping/suggestExpenseSign/showMappingStep/
+      // buildParsedRows...): lo único distinto es cómo se llega a
+      // { headers, rows, headerDetected } (ver CsvImport.pickBestXlsxTable).
       var name = (file.name || "").toLowerCase();
       if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
-        errEl.textContent = "Por ahora solo se puede importar un CSV. Desde tu banco, exporta el extracto eligiendo el formato CSV (no Excel) y súbelo de nuevo.";
-        errEl.hidden = false;
-        $("input-import-file").value = "";
+        if (typeof XLSX === "undefined") {
+          errEl.textContent = "No se ha podido cargar el lector de Excel (revisa tu conexión) e inténtalo otra vez, o exporta el extracto como CSV.";
+          errEl.hidden = false;
+          $("input-import-file").value = "";
+          return;
+        }
+        var xlsxReader = new FileReader();
+        xlsxReader.onload = function () {
+          var workbook;
+          try {
+            // cellDates:true + sheet_to_json(raw:false) da celdas de fecha
+            // e importe ya como texto formateado -- el mismo tipo de valor
+            // que produce partir una línea de CSV, sin tocar
+            // parseAmountFlexible/parseDateFlexible para nada.
+            workbook = XLSX.read(xlsxReader.result, { type: "array", cellDates: true });
+          } catch (e) {
+            console.error(e);
+            errEl.textContent = "No se ha podido leer ese Excel. Prueba a exportarlo como CSV desde tu banco.";
+            errEl.hidden = false;
+            return;
+          }
+          var sheets = workbook.SheetNames.map(function (sheetName) {
+            var raw = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: false, defval: "", dateNF: "yyyy-mm-dd" });
+            var rows = raw.map(function (row) {
+              return row.map(function (cell) { return cell == null ? "" : String(cell).trim(); });
+            }).filter(function (row) { return row.some(function (c) { return c !== ""; }); });
+            return { name: sheetName, rows: rows };
+          });
+          var table = CsvImport.pickBestXlsxTable(sheets);
+          if (!table.rows.length) {
+            errEl.textContent = "No hemos podido leer ninguna fila de ese archivo.";
+            errEl.hidden = false;
+            return;
+          }
+          importContext.headers = table.headers;
+          importContext.rows = table.rows;
+          importContext.headerDetected = table.headerDetected;
+          importContext.mapping = CsvImport.guessColumnMapping(table.headers);
+          importContext.sign = CsvImport.suggestExpenseSign(table.rows, importContext.mapping);
+          showMappingStep();
+        };
+        xlsxReader.onerror = function () {
+          errEl.textContent = "No se ha podido leer el archivo.";
+          errEl.hidden = false;
+        };
+        xlsxReader.readAsArrayBuffer(file);
         return;
       }
 
@@ -4704,14 +4871,47 @@
     return match ? match[1] : "desconocida";
   }
 
+  // Envío a Netlify Forms (form estático "feedback" en index.html, ver ahí
+  // el porqué) -- SOLO AJAX con fetch, nunca form.submit(), para que la
+  // persona no salga de la app. El destinatario del correo NO se fija
+  // aquí ni en ningún otro sitio del frontend: se configura desde el panel
+  // de Netlify. Mejor esfuerzo: si falla, se registra en consola pero no
+  // bloquea nada -- Firestore (sendFeedback) sigue siendo el guardado que
+  // de verdad importa, este es un canal añadido, no un reemplazo.
+  function submitFeedbackToNetlify(fields) {
+    var body = Object.keys(fields).map(function (k) {
+      return encodeURIComponent(k) + "=" + encodeURIComponent(fields[k] == null ? "" : String(fields[k]));
+    }).join("&");
+    return fetch("/", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "form-name=feedback&" + body
+    });
+  }
+
   function sendFeedback() {
     var textarea = $("input-feedback");
     var mensaje = textarea.value.trim().slice(0, 2000);
     if (!mensaje) { showToast("Escribe algo antes de enviar."); return; }
 
     var btn = $("btn-send-feedback");
+    // Deshabilitado durante todo el envío (Firestore + Netlify) -- evita
+    // el doble envío si se pulsa varias veces mientras tarda.
+    if (btn.disabled) return;
     btn.disabled = true;
     btn.textContent = "Enviando...";
+
+    var tipoEspacio = state.space ? state.space.type : "sin espacio";
+    var fecha = new Date().toISOString();
+
+    submitFeedbackToNetlify({
+      comentario: mensaje,
+      tipo: state.selectedFeedbackType,
+      email: state.user.email,
+      pestana: state.mainTab,
+      espacio: tipoEspacio,
+      fecha: fecha
+    }).catch(function (err) { console.error("[netlify-forms]", err); });
 
     db.collection("feedback").add({
       email: state.user.email,
@@ -4719,7 +4919,7 @@
       mensaje: mensaje,
       contexto: {
         version: appVersion(),
-        tipoEspacio: state.space ? state.space.type : "sin espacio",
+        tipoEspacio: tipoEspacio,
         pestana: state.mainTab,
         navegador: navigator.userAgent,
         pantalla: window.innerWidth + "x" + window.innerHeight

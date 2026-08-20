@@ -10,6 +10,7 @@ const {
   sumFixedExpenses,
   projectEndOfMonth,
   otrosIsBiggestCategory,
+  payrollRemaining,
 } = require("../debt-calc.js");
 
 // ---- sumFixedExpenses: gasto fijo = previsión, no se cuenta dos veces ----
@@ -71,4 +72,14 @@ test("otrosIsBiggestCategory: false cuando otra categoría pesa más que Otros",
 
 test("otrosIsBiggestCategory: false si no hay gasto en Otros este periodo", () => {
   assert.equal(otrosIsBiggestCategory({ ocio: 50, casa: 30 }), false);
+});
+
+// ---- payrollRemaining: nómina MVP informativo ----
+
+test("payrollRemaining: nómina menos gastado desde entonces", () => {
+  assert.equal(payrollRemaining(1500, 400), 1100);
+});
+
+test("payrollRemaining: puede salir negativo (te has pasado)", () => {
+  assert.equal(payrollRemaining(1500, 1800), -300);
 });
