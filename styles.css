@@ -729,10 +729,11 @@ ul { list-style: none; margin: 0; padding: 0; }
   display: flex; align-items: center; justify-content: center;
   font-size: 19px; flex-shrink: 0;
 }
-.li-body { flex: 1; min-width: 0; }
-.li-title { font-weight: 800; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.li-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.li-row1 { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.li-title { flex: 1; min-width: 0; font-weight: 800; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .li-sub { font-size: 12px; color: var(--gray); margin-top: 1px; }
-.li-amount { font-weight: 800; font-size: 14px; white-space: nowrap; }
+.li-amount { flex-shrink: 0; font-weight: 800; font-size: 14px; white-space: nowrap; }
 .li-avatar {
   width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
   background: var(--cream); display: flex; align-items: center; justify-content: center; font-size: 12px;
@@ -753,6 +754,13 @@ ul { list-style: none; margin: 0; padding: 0; }
 .li-actions { display: flex; gap: 2px; flex-shrink: 0; }
 .li-action-btn { border: none; background: none; font-size: 18px; padding: 10px; min-width: 40px; min-height: 40px; border-radius: 10px; line-height: 1; }
 .li-action-btn:active { background: var(--line); }
+
+/* ============ Selección múltiple de gastos ============ */
+.select-mode-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; padding: 8px 10px; background: var(--cream); border-radius: 10px; }
+.select-all-label { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: var(--dark); }
+.select-mode-actions { display: flex; gap: 6px; }
+.select-mode-actions .btn-secondary, .select-mode-actions .btn-danger-outline { padding: 8px 14px; font-size: 13px; width: auto; flex: none; }
+.li-select-check { flex-shrink: 0; width: 20px; height: 20px; margin-right: 2px; }
 
 /* ============ Confirm dialog (custom, no native confirm()) ============ */
 .modal-center { align-items: center; }

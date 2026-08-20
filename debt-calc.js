@@ -273,6 +273,45 @@
     return result;
   }
 
+  /* ============ Presupuesto (feedback beta) ============ */
+
+  // Un gasto fijo es una previsión. Si este mes ya hay un gasto real
+  // vinculado a él (linkedFixedExpenseId, ver app.js), su importe ya está
+  // contado dentro de los gastos reales del mes -- sumarlo también aquí
+  // lo contaría dos veces. excludeIds son los ids de gasto fijo que ya
+  // tienen un gasto real vinculado este mes.
+  function sumFixedExpenses(fixedList, category, excludeIds) {
+    var exclude = excludeIds || [];
+    return fixedList
+      .filter(function (f) { return !category || f.category === category; })
+      .filter(function (f) { return exclude.indexOf(f.id) === -1; })
+      .reduce(function (sum, f) { return sum + f.amount; }, 0);
+  }
+
+  // Proyección de fin de mes: lo ya gastado (variable) + lo que falta
+  // gastar al mismo ritmo diario, aplicado SOLO a los días que quedan (no
+  // al mes entero, que volvería a contar los días ya vividos) + los gastos
+  // fijos que todavía no se han pagado este mes. Sustituye a
+  // "total/día × días del mes".
+  function projectEndOfMonth(spentSoFar, dayOfMonth, daysInMonth, pendingFixed) {
+    if (!dayOfMonth || dayOfMonth <= 0) return spentSoFar + pendingFixed;
+    var remainingDays = Math.max(0, daysInMonth - dayOfMonth);
+    var dailyRate = spentSoFar / dayOfMonth;
+    return spentSoFar + dailyRate * remainingDays + pendingFixed;
+  }
+
+  // "Otros" nunca debe salir como recomendación de recorte (una categoría
+  // cajón de sastre no dice en qué recortar de verdad) -- y si además es la
+  // que más pesa, el problema real es que faltan categorías mejores, no que
+  // haya mucho que recortar.
+  function otrosIsBiggestCategory(categoryAverages, otrosKey) {
+    var key = otrosKey || "otros";
+    var averages = categoryAverages || {};
+    var keys = Object.keys(averages);
+    if (!keys.length || !(key in averages)) return false;
+    return keys.every(function (k) { return k === key || averages[k] <= averages[key]; });
+  }
+
   return {
     isDebtExpense: isDebtExpense,
     debtExpenses: debtExpenses,
@@ -290,6 +329,10 @@
     enforceImmutableFieldsOnEdit: enforceImmutableFieldsOnEdit,
     validateEconomicSplit: validateEconomicSplit,
     validatePayerEmail: validatePayerEmail,
-    computeBalanceCents: computeBalanceCents
+    computeBalanceCents: computeBalanceCents,
+
+    sumFixedExpenses: sumFixedExpenses,
+    projectEndOfMonth: projectEndOfMonth,
+    otrosIsBiggestCategory: otrosIsBiggestCategory
   };
 });

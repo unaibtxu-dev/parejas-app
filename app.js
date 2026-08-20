@@ -5,11 +5,19 @@
     try { fn(); } catch (err) { console.error("[gastos-pareja] fallo en " + name, err); }
   }
 
+  // "comida" se mantiene solo por compatibilidad con gastos ya guardados con
+  // esa categoría (sin migración) -- el importador y el selector manual ya
+  // no la usan, la sustituyen "supermercado"/"comer_fuera" (feedback beta:
+  // categorías más finas que "Comida" para todo).
   var CATEGORIES = [
     { key: "comida", label: "Comida", emoji: "🍔", color: "#FF6B6B" },
+    { key: "supermercado", label: "Supermercado", emoji: "🛒", color: "#FF6B6B" },
+    { key: "comer_fuera", label: "Comer fuera", emoji: "🍽️", color: "#FF9F6B" },
     { key: "transporte", label: "Transporte", emoji: "🚗", color: "#4ECDC4" },
     { key: "ocio", label: "Ocio", emoji: "🎉", color: "#FFD93D" },
     { key: "casa", label: "Casa", emoji: "🏠", color: "#6C5CE7" },
+    { key: "suscripciones", label: "Suscripciones", emoji: "🔁", color: "#8E7CF0" },
+    { key: "compras", label: "Compras", emoji: "🛍️", color: "#FF8FB1" },
     { key: "salud", label: "Salud", emoji: "💊", color: "#00B894" },
     { key: "otros", label: "Otros", emoji: "📦", color: "#A29BFE" }
   ];
@@ -86,6 +94,8 @@
     selectedIsTripExpense: true,
     selectedPayer: "",
     editingExpenseId: null,
+    selectMode: false,
+    selectedExpenseIds: [],
     editingLoanId: null,
     selectedLoanTermUnit: "years",
     selectedLoanAddToMonthly: true,
@@ -915,6 +925,7 @@
             tripGoalId: data.tripGoalId || null,
             economicSplit: data.economicSplit || null,
             splitBp: data.splitBp || null,
+            linkedFixedExpenseId: data.linkedFixedExpenseId || null,
             date: expenseDate
           };
         }).sort(function (a, b) { return b.date - a.date; });
@@ -937,7 +948,8 @@
       lng: payload.lng,
       payerEmail: payload.payerEmail,
       expenseDate: payload.expenseDate,
-      tripGoalId: payload.tripGoalId || null
+      tripGoalId: payload.tripGoalId || null,
+      linkedFixedExpenseId: payload.linkedFixedExpenseId || null
     };
     // Solo se incluyen si el caller los ha puesto explícitamente en el
     // payload (updateExpense() al recalcular por un cambio de importe, ver
@@ -1173,10 +1185,21 @@
     return own.concat(loanFixedEntries(email)).concat(goalFixedEntries(email));
   }
 
-  function fixedExpensesTotal(email, category) {
-    return fixedExpensesFor(email)
-      .filter(function (f) { return !category || f.category === category; })
-      .reduce(function (sum, f) { return sum + f.amount; }, 0);
+  // linkedFixedIds: ids de gasto fijo que ya tienen un gasto real vinculado
+  // este mes (linkedFixedExpenseId) -- un gasto fijo es una previsión, así
+  // que si ya se ha contado como gasto real, no se vuelve a sumar aquí (ver
+  // debt-calc.js, sumFixedExpenses).
+  function fixedExpensesTotal(email, category, linkedFixedIds) {
+    return DebtCalc.sumFixedExpenses(fixedExpensesFor(email), category, linkedFixedIds);
+  }
+
+  // Ids de gasto fijo con un gasto real de este mes ya vinculado -- de entre
+  // los gastos pasados, para no excluir del total un fijo que en realidad
+  // sigue sin pagarse.
+  function linkedFixedIdsThisMonth() {
+    return expensesOfMonth()
+      .map(function (e) { return e.linkedFixedExpenseId; })
+      .filter(Boolean);
   }
 
   /* ============ Firestore: deudas / pagos ============ */
@@ -1860,38 +1883,153 @@
 
   function renderExpenseList() {
     var list = viewExpensesOfMonth();
+    // Si cambia el mes, la pestaña Personal/Compartido, o cualquier otra
+    // cosa que reduzca la vista actual, no deben quedar IDs seleccionados
+    // que ya no se ven -- se podrían borrar sin que la persona los viera
+    // marcados. Se recorta en cada render, no solo al cambiar de mes/pestaña
+    // a propósito, para que autocorrija sea lo que sea que haya cambiado.
+    if (state.selectMode) {
+      var visibleIdsNow = list.map(function (e) { return e.id; });
+      state.selectedExpenseIds = state.selectedExpenseIds.filter(function (id) { return visibleIdsNow.indexOf(id) !== -1; });
+    }
     var ul = $("expense-list");
     ul.innerHTML = "";
     if (list.length === 0) {
       ul.innerHTML = '<li class="empty-hint">Aún no hay gastos este mes.</li>';
-      return;
+    } else {
+      list.forEach(function (e) {
+        var cat = CATEGORY_BY_KEY[e.category] || CATEGORIES[5];
+        var li = document.createElement("li");
+        li.dataset.id = e.id;
+        var sub = partnerLabel(e.payerEmail) + " · " + fmtDate(e.date) + (e.place ? " · " + escapeHtml(e.place) : "");
+        var title = escapeHtml(displayNoteWithoutLegacyPrefix(e.note)) || cat.label;
+        // En modo selección no hay editar/borrar individual -- solo la
+        // casilla, para no mezclar dos formas distintas de tocar la fila.
+        var rightPart = state.selectMode
+          ? '<input type="checkbox" class="li-select-check" ' + (state.selectedExpenseIds.indexOf(e.id) !== -1 ? "checked" : "") + '>'
+          : '<span class="li-actions">' +
+            '<button type="button" class="li-action-btn" data-action="edit" title="Editar">✏️</button>' +
+            '<button type="button" class="li-action-btn" data-action="delete" title="Eliminar">🗑️</button>' +
+            '</span>';
+        // Línea 1: concepto (truncable) + importe. Línea 2: pagador + fecha.
+        // El importe y las acciones/casilla nunca se solapan -- ambos son
+        // flex-shrink:0, es el título el único que cede espacio (ellipsis).
+        li.innerHTML =
+          '<span class="li-icon" style="background:' + cat.color + '22">' + cat.emoji + '</span>' +
+          '<span class="li-avatar" title="' + escapeHtml(partnerLabel(e.payerEmail)) + '">' + getAvatar(e.payerEmail) + '</span>' +
+          '<span class="li-body">' +
+          '<span class="li-row1"><span class="li-title">' + title + '</span>' +
+          '<span class="li-amount">' + fmtMoney(e.amount) + '</span></span>' +
+          '<span class="li-sub">' + sub + '</span>' +
+          '</span>' +
+          rightPart;
+        ul.appendChild(li);
+      });
     }
-    list.forEach(function (e) {
-      var cat = CATEGORY_BY_KEY[e.category] || CATEGORIES[5];
-      var li = document.createElement("li");
-      li.dataset.id = e.id;
-      var sub = partnerLabel(e.payerEmail) + " · " + fmtDate(e.date) + (e.place ? " · " + escapeHtml(e.place) : "");
-      li.innerHTML =
-        '<span class="li-icon" style="background:' + cat.color + '22">' + cat.emoji + '</span>' +
-        '<span class="li-avatar" title="' + escapeHtml(partnerLabel(e.payerEmail)) + '">' + getAvatar(e.payerEmail) + '</span>' +
-        '<span class="li-body"><span class="li-title">' + (escapeHtml(e.note) || cat.label) + '</span>' +
-        '<span class="li-sub">' + sub + '</span></span>' +
-        '<span class="li-amount">' + fmtMoney(e.amount) + '</span>' +
-        '<span class="li-actions">' +
-        '<button type="button" class="li-action-btn" data-action="edit" title="Editar">✏️</button>' +
-        '<button type="button" class="li-action-btn" data-action="delete" title="Eliminar">🗑️</button>' +
-        '</span>';
-      ul.appendChild(li);
+    updateSelectModeBar();
+  }
+
+  function updateSelectModeBar() {
+    var n = state.selectedExpenseIds.length;
+    var delBtn = $("btn-select-delete");
+    delBtn.textContent = "Eliminar (" + n + ")";
+    delBtn.disabled = n === 0;
+    var visibleIds = viewExpensesOfMonth().map(function (e) { return e.id; });
+    var allSelected = visibleIds.length > 0 && visibleIds.every(function (id) { return state.selectedExpenseIds.indexOf(id) !== -1; });
+    $("chk-select-all").checked = allSelected;
+  }
+
+  function enterSelectMode() {
+    state.selectMode = true;
+    state.selectedExpenseIds = [];
+    $("select-mode-bar").hidden = false;
+    renderExpenseList();
+  }
+
+  // "Cancelar sale del modo selección sin cambios" -- no borra nada, solo
+  // limpia la selección en memoria.
+  function exitSelectMode() {
+    state.selectMode = false;
+    state.selectedExpenseIds = [];
+    $("select-mode-bar").hidden = true;
+    renderExpenseList();
+  }
+
+  function deleteSelectedExpenses() {
+    var ids = state.selectedExpenseIds.slice();
+    if (!ids.length) return;
+    showConfirm("¿Eliminar " + ids.length + " gasto" + (ids.length > 1 ? "s" : "") + "? No se puede deshacer.").then(function (ok) {
+      if (!ok) return;
+      var delBtn = $("btn-select-delete");
+      delBtn.disabled = true;
+      delBtn.textContent = "Eliminando...";
+      // Chunks de 450 (margen bajo el límite de 500 escrituras por batch de
+      // Firestore) -- igual que undoImportBatch(), pero esto es un borrado
+      // de cualquier selección, no del lote completo de una importación.
+      var chunks = [];
+      for (var i = 0; i < ids.length; i += 450) chunks.push(ids.slice(i, i + 450));
+      var deletedIds = [];
+
+      chunks.reduce(function (p, chunk) {
+        return p.then(function () {
+          var b = db.batch();
+          chunk.forEach(function (id) { b.delete(db.collection("expenses").doc(id)); });
+          return b.commit().then(function () { deletedIds = deletedIds.concat(chunk); });
+        });
+      }, Promise.resolve()).then(function () {
+        showToast(ids.length + " gasto" + (ids.length > 1 ? "s" : "") + " eliminado" + (ids.length > 1 ? "s" : "") + ".");
+        exitSelectMode();
+      }).catch(function (err) {
+        console.error(err);
+        // Borrado parcial: los chunks ya confirmados SÍ se borraron de
+        // Firestore, así que nunca se dice "no se ha borrado nada" si
+        // deletedIds tiene algo. Se quitan de la selección (ya no existen)
+        // y se deja seleccionado solo lo que falta, para poder reintentar
+        // sin tener que volver a elegir todo desde cero.
+        state.selectedExpenseIds = state.selectedExpenseIds.filter(function (id) { return deletedIds.indexOf(id) === -1; });
+        if (deletedIds.length) {
+          showToast("Se han eliminado " + deletedIds.length + " de " + ids.length + " gastos. Hubo un error a mitad — vuelve a intentarlo con el resto.");
+        } else {
+          showToast("No se ha podido eliminar ninguno. Inténtalo otra vez.");
+        }
+        delBtn.disabled = false;
+        renderExpenseList(); // refresca contador y casillas con el estado real, no se queda "Eliminando..." colgado
+      });
     });
   }
 
   function initExpenseListActions() {
+    $("btn-select-mode").addEventListener("click", enterSelectMode);
+    $("btn-select-cancel").addEventListener("click", exitSelectMode);
+    $("btn-select-delete").addEventListener("click", deleteSelectedExpenses);
+    $("chk-select-all").addEventListener("change", function (ev) {
+      var visibleIds = viewExpensesOfMonth().map(function (e) { return e.id; });
+      if (ev.target.checked) {
+        visibleIds.forEach(function (id) {
+          if (state.selectedExpenseIds.indexOf(id) === -1) state.selectedExpenseIds.push(id);
+        });
+      } else {
+        state.selectedExpenseIds = state.selectedExpenseIds.filter(function (id) { return visibleIds.indexOf(id) === -1; });
+      }
+      renderExpenseList();
+    });
+
     $("expense-list").addEventListener("click", function (ev) {
-      var btn = ev.target.closest(".li-action-btn");
-      if (!btn) return;
       var li = ev.target.closest("li");
       var id = li && li.dataset.id;
       if (!id) return;
+
+      if (state.selectMode) {
+        // Cualquier toque en la fila (no solo la casilla) la marca/desmarca
+        // -- más fácil de tocar en móvil que acertar justo en la casilla.
+        var idx = state.selectedExpenseIds.indexOf(id);
+        if (idx === -1) state.selectedExpenseIds.push(id); else state.selectedExpenseIds.splice(idx, 1);
+        renderExpenseList();
+        return;
+      }
+
+      var btn = ev.target.closest(".li-action-btn");
+      if (!btn) return;
       var expense = state.allExpenses.find(function (e) { return e.id === id; });
       if (!expense) return;
 
@@ -2003,7 +2141,7 @@
       li.innerHTML =
         '<span class="li-icon" style="background:' + cat.color + '22">' + cat.emoji + '</span>' +
         '<span class="li-avatar" title="' + escapeHtml(partnerLabel(e.payerEmail)) + '">' + getAvatar(e.payerEmail) + '</span>' +
-        '<span class="li-body"><span class="li-title">' + (escapeHtml(e.note) || escapeHtml(e.place) || cat.label) + '</span>' +
+        '<span class="li-body"><span class="li-title">' + (escapeHtml(displayNoteWithoutLegacyPrefix(e.note)) || escapeHtml(e.place) || cat.label) + '</span>' +
         '<span class="li-sub">' + partnerLabel(e.payerEmail) + ' · ' + fmtDate(e.date) + '</span></span>' +
         '<span class="li-amount">' + fmtMoney(e.amount) + '</span>' +
         '<span class="li-actions">' +
@@ -2661,12 +2799,18 @@
     var history = personalCategoryAverages(email);
     if (!history) return null;
 
-    var fixedGasto = fixedExpensesTotal(email, "gasto");
-    var fixedAhorro = fixedExpensesTotal(email, "ahorro");
+    var linkedIds = linkedFixedIdsThisMonth();
+    var fixedGasto = fixedExpensesTotal(email, "gasto", linkedIds);
+    var fixedAhorro = fixedExpensesTotal(email, "ahorro", linkedIds);
     var budget = getBudgetAmount(email, monthKey(currentMonthDate()));
     var margin = budget > 0 ? budget - fixedGasto - fixedAhorro - history.total : null;
 
+    // "Otros" nunca es una recomendación de recorte útil (no dice en qué
+    // recortar) -- se excluye de la lista, y si además es la categoría que
+    // más pesa, se avisa para revisar categorías en vez de dar por buena
+    // esa media (ver DebtCalc.otrosIsBiggestCategory).
     var categories = Object.keys(history.averages)
+      .filter(function (k) { return k !== "otros"; })
       .map(function (k) {
         var cat = CATEGORY_BY_KEY[k] || CATEGORY_BY_KEY.otros;
         return { key: k, label: cat.label, emoji: cat.emoji, amount: history.averages[k] };
@@ -2682,7 +2826,8 @@
       variableTotal: history.total,
       budget: budget,
       margin: margin,
-      categories: categories
+      categories: categories,
+      otrosDominant: DebtCalc.otrosIsBiggestCategory(history.averages, "otros")
     };
   }
 
@@ -2713,12 +2858,19 @@
           return '<span class="plan-cat-chip">' + c.emoji + ' ' + c.label + ' · ' + fmtMoney(c.amount) + '/mes</span>';
         }).join("") + '</div>'
       : '';
+    // Si "Otros" es la categoría que más pesa, no tiene sentido dar
+    // recomendaciones de recorte con lo que queda -- el problema es que
+    // falta categorizar mejor, no que haya mucho que recortar.
+    var otrosHint = plan.otrosDominant
+      ? '<p class="plan-line plan-warn">📦 "Otros" se lleva la mayor parte de tu gasto — revisa las categorías de tus gastos para ver dónde se puede recortar de verdad.</p>'
+      : '';
 
     $("financial-plan-body").innerHTML =
       '<p class="plan-line">🔒 Fijo comprometido: <strong>' + fmtMoney(fixedTotal) + '/mes</strong> <span class="plan-sub">(préstamos, ahorro para metas y gastos fijos)</span></p>' +
       '<p class="plan-line">📊 Gasto variable medio: <strong>' + fmtMoney(plan.variableTotal) + '/mes</strong> <span class="plan-sub">(media de ' + plan.months + (plan.months === 1 ? ' mes' : ' meses') + ')</span></p>' +
       marginLine +
       (plan.months === 1 ? '<p class="plan-sub">Con otro mes más de datos el plan será más fiable.</p>' : '') +
+      otrosHint +
       (categoriesHtml ? '<p class="field-label" style="margin-top:14px;">Dónde más se puede recortar</p>' + categoriesHtml : '') +
       '<label class="field-label" for="plan-cut-input" style="margin-top:14px;">¿Cuánto quieres recortar al mes?</label>' +
       '<div class="amount-input-wrap"><input id="plan-cut-input" type="number" min="0" step="5" placeholder="0" value="0"><span class="amount-suffix">€</span></div>' +
@@ -2832,14 +2984,22 @@
       var dayOfMonth = today.getDate();
       var daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
       if (dayOfMonth >= 5 && dayOfMonth < daysInMonth) {
-        var projected = (total / dayOfMonth) * daysInMonth;
+        // gastado actual + variable proyectado (solo días que quedan, no el
+        // mes entero) + fijos pendientes -- "total/día × días del mes"
+        // contaba dos veces los días ya vividos y no sabía nada de los
+        // fijos que aún faltan por pagar (ver DebtCalc.projectEndOfMonth).
+        var linkedIdsForProjection = linkedFixedIdsThisMonth();
+        var pendingFixed = PARTNERS.filter(function (p) { return p.email; })
+          .reduce(function (sum, p) { return sum + fixedExpensesTotal(p.email, "gasto", linkedIdsForProjection); }, 0);
+        var projected = DebtCalc.projectEndOfMonth(total, dayOfMonth, daysInMonth, pendingFixed);
         var extra = projected - total;
         insights.push({
           emoji: "📈",
           tone: "info",
           title: "A este ritmo acabarás el mes en " + fmtMoney(projected),
           text: "Llevas " + fmtMoney(total) + " en " + dayOfMonth + " días (" + fmtMoney(total / dayOfMonth) +
-            "/día). Quedan " + (daysInMonth - dayOfMonth) + " días, unos " + fmtMoney(extra) + " más si sigues igual."
+            "/día) + " + fmtMoney(pendingFixed) + " en fijos pendientes. Quedan " + (daysInMonth - dayOfMonth) +
+            " días, unos " + fmtMoney(extra) + " más si sigues igual."
         });
       }
     }
@@ -3199,8 +3359,9 @@
       var spent = conjuntoSpent + individualSpent;
       var budget = getBudgetAmount(p.email, mKey);
       var fixedList = fixedExpensesFor(p.email);
-      var fixedGastoTotal = fixedExpensesTotal(p.email, "gasto");
-      var fixedAhorroTotal = fixedExpensesTotal(p.email, "ahorro");
+      var linkedIds = linkedFixedIdsThisMonth();
+      var fixedGastoTotal = fixedExpensesTotal(p.email, "gasto", linkedIds);
+      var fixedAhorroTotal = fixedExpensesTotal(p.email, "ahorro", linkedIds);
       var remaining = budget - spent - fixedGastoTotal - fixedAhorroTotal;
 
       var row = document.createElement("div");
@@ -3316,6 +3477,20 @@
     });
   }
 
+  var LEGACY_IMPORT_NOTE_PREFIX = "Importado del banco: ";
+
+  // Compatibilidad de solo presentación con el importador CSV antiguo, que
+  // guardaba el texto bancario crudo en `note` con este prefijo literal. El
+  // dato en Firestore no se toca -- no hay migración -- se limpia solo al
+  // mostrarlo. Los gastos importados con el parser actual ya no llevan este
+  // prefijo (usan `place` con el concepto ya saneado, ver PHASE_CSV_V2.md).
+  function displayNoteWithoutLegacyPrefix(note) {
+    if (note && note.indexOf(LEGACY_IMPORT_NOTE_PREFIX) === 0) {
+      return note.slice(LEGACY_IMPORT_NOTE_PREFIX.length).trim();
+    }
+    return note;
+  }
+
   function escapeHtml(str) {
     if (!str) return "";
     return String(str).replace(/[&<>"']/g, function (c) {
@@ -3371,119 +3546,33 @@
   // que corregirla. Los gastos se guardan con su fecha real (puede ser de
   // hace un año) para poder cargar todo el histórico de golpe.
 
-  var importContext = { rows: null, headers: null, mapping: null, type: "individual", recurringGroups: [], parsed: [] };
+  // sign: "negative" | "positive" (ver csv-import.js) -- se auto-sugiere al
+  // cargar el archivo, pero el usuario puede cambiarlo (ver
+  // initImportSignPicker). lastDiagnostics guarda por qué buildParsedRows()
+  // no encontró movimientos, para poder mostrar un mensaje específico
+  // (columna vacía, fecha inválida, signo equivocado...) en vez de uno único.
+  var importContext = { rows: null, headers: null, headerDetected: true, mapping: null, sign: "negative", type: "individual", recurringGroups: [], parsed: [], lastDiagnostics: null };
 
-  // Parser de CSV a mano: sin librería, pero soporta comillas y detecta si el
-  // separador es "," o ";" (los bancos españoles casi siempre usan ";").
-  function parseCsvText(text) {
-    text = text.replace(/^﻿/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-    var lines = text.split("\n").filter(function (l) { return l.trim() !== ""; });
-    if (!lines.length) return { headers: [], rows: [] };
+  // El parser de CSV en sí (decodificación, delimitador, cabecera, mapping
+  // de columnas, importe/fecha, signo) vive en csv-import.js -- puro,
+  // probado con node:test (ver /test/csv-import.test.js), igual que
+  // debt-calc.js. Aquí solo se le pasan los datos reales del archivo
+  // subido y del formulario.
 
-    var commaCount = (lines[0].match(/,/g) || []).length;
-    var semiCount = (lines[0].match(/;/g) || []).length;
-    var delimiter = semiCount >= commaCount ? ";" : ",";
-
-    function parseLine(line) {
-      var cells = [], cur = "", inQuotes = false;
-      for (var i = 0; i < line.length; i++) {
-        var ch = line[i];
-        if (inQuotes) {
-          if (ch === '"') {
-            if (line[i + 1] === '"') { cur += '"'; i++; } else { inQuotes = false; }
-          } else { cur += ch; }
-        } else if (ch === '"') {
-          inQuotes = true;
-        } else if (ch === delimiter) {
-          cells.push(cur); cur = "";
-        } else {
-          cur += ch;
-        }
-      }
-      cells.push(cur);
-      return cells.map(function (c) { return c.trim(); });
-    }
-
-    var headers = parseLine(lines[0]);
-    var rows = lines.slice(1).map(parseLine);
-    return { headers: headers, rows: rows };
-  }
-
-  // Admite "1.234,56" (España), "1234.56" (genérico) y "-12,50". Se asume que
-  // los importes negativos son gastos; los positivos (ingresos) se descartan
-  // más adelante, ya que esto es un registro de gastos, no de todo el movimiento.
-  function parseAmountFlexible(str) {
-    if (str == null) return null;
-    var s = String(str).trim().replace(/[€\s]/g, "");
-    if (!s) return null;
-    var negative = /^-/.test(s) || /^\(.*\)$/.test(s);
-    s = s.replace(/^[-+]/, "").replace(/[()]/g, "");
-    if (s.indexOf(",") !== -1 && s.indexOf(".") !== -1) {
-      s = s.lastIndexOf(",") > s.lastIndexOf(".") ? s.replace(/\./g, "").replace(",", ".") : s.replace(/,/g, "");
-    } else if (s.indexOf(",") !== -1) {
-      s = s.replace(",", ".");
-    }
-    var n = parseFloat(s);
-    if (isNaN(n)) return null;
-    return negative ? -n : n;
-  }
-
-  // Admite dd/mm/yyyy, dd-mm-yyyy y yyyy-mm-dd (con / o -).
-  function parseDateFlexible(str) {
-    if (!str) return null;
-    var s = String(str).trim();
-    var m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
-    if (m) return new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
-    m = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
-    if (m) return new Date(parseInt(m[3], 10), parseInt(m[2], 10) - 1, parseInt(m[1], 10));
-    return null;
-  }
-
-  // Se calcula en orden (fecha, luego importe, luego concepto) y cada
-  // columna ya asignada queda excluida de las siguientes búsquedas — si no,
-  // "valor" encuentra antes la columna "F. Valor" (fecha) que "Importe",
-  // porque para el banco "valor" también significa fecha valor, no dinero.
-  function guessColumnMapping(headers) {
-    var lower = headers.map(function (h) { return h.toLowerCase(); });
-    var used = {};
-
-    function find(keywordGroups) {
-      for (var g = 0; g < keywordGroups.length; g++) {
-        for (var i = 0; i < lower.length; i++) {
-          if (used[i]) continue;
-          if (lower[i].indexOf(keywordGroups[g]) !== -1) return i;
-        }
-      }
-      return -1;
-    }
-
-    var dateIdx = find(["fecha valor", "f. valor", "f valor", "fecha operacion", "fecha operación", "fecha"]);
-    if (dateIdx !== -1) used[dateIdx] = true;
-
-    var amountIdx = find(["importe", "cantidad", "monto", "valor"]);
-    if (amountIdx !== -1) used[amountIdx] = true;
-
-    var conceptIdx = find(["concepto", "descripcion", "descripción", "detalle", "observaciones"]);
-
-    function firstFree(preferred) {
-      if (preferred !== -1 && !used[preferred]) return preferred;
-      for (var i = 0; i < headers.length; i++) { if (!used[i]) return i; }
-      return 0;
-    }
-
-    return {
-      date: dateIdx !== -1 ? dateIdx : firstFree(0),
-      amount: amountIdx !== -1 ? amountIdx : firstFree(1),
-      concept: conceptIdx !== -1 ? conceptIdx : firstFree(2)
-    };
-  }
-
+  // Palabras genéricas ES/CAT primero (las que reconocen cualquier banco/
+  // comercio sin nombrarlo), nombres de marca conocidos después, como apoyo
+  // -- nunca al revés. "comida" ya no es una categoría de destino: se
+  // reparte entre "supermercado" (comprar para casa) y "comer_fuera"
+  // (restaurantes/comida a domicilio).
   var IMPORT_CATEGORY_KEYWORDS = [
-    { key: "comida", words: ["mercadona", "carrefour", "lidl", "dia %", "supermercado", "restaurante", "bar ", "cafeteria", "cafetería", "eroski", "alcampo", "glovo", "just eat", "uber eats"] },
-    { key: "transporte", words: ["renfe", "uber", "cabify", "taxi", "gasolina", "repsol", "cepsa", "bp ", "shell", "metro", "emt", "parking", "peaje", "iberia", "vueling", "ryanair"] },
-    { key: "ocio", words: ["netflix", "spotify", "hbo", "disney", "cine", "prime video", "steam", "playstation", "gimnasio", "gym"] },
-    { key: "casa", words: ["alquiler", "hipoteca", "endesa", "iberdrola", "naturgy", "movistar", "vodafone", "orange", "agua", "comunidad de propietarios"] },
-    { key: "salud", words: ["farmacia", "seguro medico", "seguro médico", "clinica", "clínica", "dentista"] }
+    { key: "supermercado", words: ["supermercat", "supermercado", "super ", "mercat", "mercado", "fruiteria", "fruteria", "frutería", "carnisseria", "carniceria", "carnicería", "peixateria", "pescaderia", "pescadería", "forn", "panaderia", "panadería", "mercadona", "carrefour", "lidl", "dia %", "eroski", "alcampo", "condis", "caprabo", "bonpreu", "hipercor"] },
+    { key: "comer_fuera", words: ["restaurant", "restaurante", "bar ", "cafeteria", "cafetería", "menjar a domicili", "comida a domicilio", "glovo", "just eat", "uber eats", "deliveroo", "mcdonalds", "burger king", "telepizza", "dominos"] },
+    { key: "transporte", words: ["transport", "transporte", "gasolinera", "benzinera", "aparcament", "aparcamiento", "peatge", "peaje", "autobus", "autobús", "renfe", "uber", "cabify", "taxi", "gasolina", "benzina", "repsol", "cepsa", "bp ", "shell", "metro", "emt", "parking", "iberia", "vueling", "ryanair"] },
+    { key: "ocio", words: ["cinema", "cine", "teatre", "teatro", "concert", "concierto", "festa", "fiesta", "oci", "steam", "playstation"] },
+    { key: "casa", words: ["lloguer", "alquiler", "hipoteca", "llum", "electricitat", "electricidad", "aigua", "agua", "gas natural", "comunitat de propietaris", "comunidad de propietarios", "ferreteria", "ferretería", "endesa", "iberdrola", "naturgy", "movistar", "vodafone", "orange", "ikea", "leroy merlin"] },
+    { key: "suscripciones", words: ["subscripcio", "suscripcion", "suscripción", "quota mensual", "cuota mensual", "gimnas", "gimnasio", "gym", "netflix", "spotify", "hbo", "disney", "prime video", "apple music", "youtube premium", "icloud", "google one", "dropbox"] },
+    { key: "compras", words: ["botiga", "tienda", "compres", "compras", "amazon", "zara", "primor", "decathlon", "el corte ingles", "el corte inglés", "fnac", "media markt", "zalando"] },
+    { key: "salud", words: ["farmacia", "farmàcia", "assegurança medica", "seguro medico", "seguro médico", "clinica", "clínica", "dentista", "fisioterapia", "psicoleg", "psicólogo"] }
   ];
 
   function guessCategory(concept) {
@@ -3570,13 +3659,14 @@
   }
 
   function resetImportModal() {
-    importContext = { rows: null, headers: null, mapping: null, type: isPersonalSpace() ? "individual" : "conjunto", recurringGroups: [], parsed: [] };
+    importContext = { rows: null, headers: null, headerDetected: true, mapping: null, sign: "negative", type: isPersonalSpace() ? "individual" : "conjunto", recurringGroups: [], parsed: [], lastDiagnostics: null };
     $("input-import-file").value = "";
     $("import-file-error").hidden = true;
     $("import-step-file").hidden = false;
     $("import-step-mapping").hidden = true;
     $("import-step-review").hidden = true;
     $("import-step-actions").hidden = true;
+    $("import-step-summary").hidden = true;
     initImportTypePicker();
   }
 
@@ -3587,6 +3677,28 @@
 
   function closeImportModal() {
     $("modal-import").hidden = true;
+  }
+
+  var IMPORT_SIGNS = [
+    { key: "negative", label: "Negativos" },
+    { key: "positive", label: "Positivos" }
+  ];
+
+  function initImportSignPicker() {
+    var wrap = $("import-sign-picker");
+    wrap.innerHTML = "";
+    IMPORT_SIGNS.forEach(function (s) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "type-chip" + (s.key === importContext.sign ? " selected" : "");
+      btn.dataset.key = s.key;
+      btn.textContent = s.label;
+      btn.addEventListener("click", function () {
+        importContext.sign = s.key;
+        wrap.querySelectorAll(".type-chip").forEach(function (el) { el.classList.toggle("selected", el.dataset.key === s.key); });
+      });
+      wrap.appendChild(btn);
+    });
   }
 
   function showMappingStep() {
@@ -3602,8 +3714,23 @@
         sel.appendChild(opt);
       });
     });
+    initImportSignPicker();
+    // Si no se detectó ninguna cabecera real, se avisa (no es un error que
+    // bloquee nada -- el usuario puede seguir con "Columna 1/2/3" y elegir
+    // a mano) para que no dé por hecho que los nombres son los de verdad.
+    $("import-no-header-hint").hidden = importContext.headerDetected;
     $("import-step-file").hidden = true;
     $("import-step-mapping").hidden = false;
+  }
+
+  // Huellas de gastos ya existentes (hasta 500 más recientes, el mismo
+  // límite de subscribeExpenses) -- detección de duplicado histórico es
+  // best-effort, no exhaustiva. Se recalcula cada vez porque es barato
+  // (cientos de filas) y evita guardar un caché que se puede desincronizar.
+  function existingExpenseFingerprints() {
+    return state.allExpenses.map(function (e) {
+      return CsvImport.computeFingerprint(e.date, e.amount, e.place || e.note || "");
+    });
   }
 
   function buildParsedRows() {
@@ -3614,63 +3741,126 @@
     };
     importContext.mapping = mapping;
 
-    var parsed = [];
-    importContext.rows.forEach(function (row) {
-      var date = parseDateFlexible(row[mapping.date]);
-      var amount = parseAmountFlexible(row[mapping.amount]);
-      var concept = (row[mapping.concept] || "").trim();
-      if (!date || amount == null || amount >= 0) return; // solo gastos (importe negativo)
-      parsed.push({ date: date, amount: Math.round(Math.abs(amount) * 100) / 100, concept: concept, category: guessCategory(concept), include: true });
+    var result = CsvImport.buildParsedRows(importContext.rows, mapping, importContext.sign);
+    importContext.lastDiagnostics = result.diagnostics;
+    CsvImport.markHistoricDuplicates(result.parsed, existingExpenseFingerprints());
+    return result.parsed.map(function (r) {
+      return {
+        date: r.date, amount: r.amount, concept: r.concept,
+        category: guessCategory(r.concept),
+        classification: r.classification,
+        duplicateInFile: r.duplicateInFile,
+        duplicateInHistory: r.duplicateInHistory,
+        fingerprint: r.fingerprint,
+        include: r.classification === "expense"
+      };
     });
-    parsed.sort(function (a, b) { return a.date - b.date; });
-    return parsed;
+  }
+
+  var IMPORT_CLASSIFICATIONS = [
+    { key: "expense", label: "Gasto" },
+    { key: "needs_review", label: "Revisar" },
+    { key: "internal_transfer", label: "Traspaso propio" },
+    { key: "reimbursement", label: "Reembolso" },
+    { key: "income", label: "Ingreso" },
+    { key: "ignore", label: "Ignorar" }
+  ];
+
+  // Recalcula recurrentes usando las clasificaciones ACTUALES de
+  // importContext.parsed -- se llama al construir el preview y cada vez
+  // que el usuario cambia la clasificación de una fila, para que la
+  // sugerencia de gasto fijo no dependa solo de la clasificación inicial.
+  function renderImportRecurringBlock() {
+    importContext.recurringGroups = detectRecurring(
+      importContext.parsed.filter(function (r) { return r.classification === "expense"; })
+    );
+
+    var recurringBlock = $("import-recurring-block");
+    recurringBlock.hidden = importContext.recurringGroups.length === 0;
+    var list = $("import-recurring-list");
+    list.innerHTML = "";
+    if (recurringBlock.hidden) return;
+    importContext.recurringGroups.forEach(function (g, idx) {
+      var cat = CATEGORY_BY_KEY[g.category] || CATEGORY_BY_KEY.otros;
+      var row = document.createElement("div");
+      row.className = "import-recurring-item";
+      row.innerHTML =
+        '<span class="import-recurring-info"><span class="import-recurring-label">' + cat.emoji + ' ' + escapeHtml(g.label) + '</span>' +
+        '<span class="import-recurring-sub">' + g.monthCount + ' meses · ' + fmtMoney(g.suggestedAmount) + '/mes</span></span>' +
+        '<label class="import-recurring-toggle"><input type="checkbox" data-idx="' + idx + '"> Gasto fijo</label>';
+      row.querySelector("input").addEventListener("change", function (ev) {
+        importContext.recurringGroups[idx].addAsFixed = ev.target.checked;
+      });
+      list.appendChild(row);
+    });
+  }
+
+  function updateImportReviewCount() {
+    var expenseCount = importContext.parsed.filter(function (r) { return r.classification === "expense"; }).length;
+    $("import-review-count").textContent = "Movimientos encontrados (" + importContext.parsed.length + ") · gastos: " + expenseCount;
   }
 
   function showReviewStep() {
     var parsed = buildParsedRows();
     if (!parsed.length) {
-      $("import-mapping-error").textContent = "No hemos encontrado ningún gasto (importe negativo) con esas columnas. Revisa la selección.";
+      // Mensaje específico según qué ha fallado (columna de fecha o de
+      // importe) -- ya no exige que haya gastos, porque ahora el preview
+      // también sirve para revisar transferencias/ingresos/reembolsos.
+      $("import-mapping-error").textContent = CsvImport.diagnosticMessage(importContext.lastDiagnostics)
+        || "No hemos encontrado ningún movimiento con esas columnas. Revisa la selección.";
       $("import-mapping-error").hidden = false;
       return;
     }
     $("import-mapping-error").hidden = true;
     importContext.parsed = parsed;
-    importContext.recurringGroups = detectRecurring(parsed);
+    renderImportRecurringBlock();
+    updateImportReviewCount();
 
-    var recurringBlock = $("import-recurring-block");
-    recurringBlock.hidden = importContext.recurringGroups.length === 0;
-    if (!recurringBlock.hidden) {
-      var list = $("import-recurring-list");
-      list.innerHTML = "";
-      importContext.recurringGroups.forEach(function (g, idx) {
-        var cat = CATEGORY_BY_KEY[g.category] || CATEGORY_BY_KEY.otros;
-        var row = document.createElement("div");
-        row.className = "import-recurring-item";
-        row.innerHTML =
-          '<span class="import-recurring-info"><span class="import-recurring-label">' + cat.emoji + ' ' + escapeHtml(g.label) + '</span>' +
-          '<span class="import-recurring-sub">' + g.monthCount + ' meses · ' + fmtMoney(g.suggestedAmount) + '/mes</span></span>' +
-          '<label class="import-recurring-toggle"><input type="checkbox" data-idx="' + idx + '"> Gasto fijo</label>';
-        row.querySelector("input").addEventListener("change", function (ev) {
-          importContext.recurringGroups[idx].addAsFixed = ev.target.checked;
-        });
-        list.appendChild(row);
-      });
-    }
+    // "comida" no se ofrece aquí -- es solo compatibilidad con datos
+    // antiguos (ver CATEGORIES), los importados nuevos ya no la usan.
+    var importableCategories = CATEGORIES.filter(function (c) { return c.key !== "comida"; });
 
-    $("import-review-count").textContent = "Gastos a importar (" + parsed.length + ")";
     var previewList = $("import-preview-list");
     previewList.innerHTML = "";
     parsed.forEach(function (r, idx) {
-      var cat = CATEGORY_BY_KEY[r.category] || CATEGORY_BY_KEY.otros;
+      var cleanConcept = CsvImport.cleanConceptForDisplay(r.concept) || "(sin concepto)";
+      var badges = "";
+      if (r.duplicateInFile) badges += '<span class="import-row-badge">⚠ repetido en el archivo</span>';
+      if (r.duplicateInHistory) badges += '<span class="import-row-badge">⚠ posible duplicado ya guardado</span>';
+      var classificationOptions = IMPORT_CLASSIFICATIONS.map(function (c) {
+        return '<option value="' + c.key + '"' + (c.key === r.classification ? " selected" : "") + '>' + c.label + '</option>';
+      }).join("");
+      // Categoría corregible a mano en el preview -- guessCategory() es
+      // solo una sugerencia de partida, igual que el mapping de columnas.
+      var categoryOptions = importableCategories.map(function (c) {
+        return '<option value="' + c.key + '"' + (c.key === r.category ? " selected" : "") + '>' + c.emoji + ' ' + c.label + '</option>';
+      }).join("");
       var li = document.createElement("li");
       li.className = "import-preview-item";
       li.innerHTML =
-        '<input type="checkbox" class="import-row-check" data-idx="' + idx + '" checked>' +
-        '<span class="import-row-body"><span class="import-row-concept">' + escapeHtml(r.concept || "(sin concepto)") + '</span>' +
-        '<span class="import-row-sub">' + fmtDate(r.date) + ' · ' + cat.emoji + ' ' + cat.label + '</span></span>' +
+        '<input type="checkbox" class="import-row-check" data-idx="' + idx + '"' + (r.include ? " checked" : "") + '>' +
+        '<span class="import-row-body"><span class="import-row-concept">' + escapeHtml(cleanConcept) + '</span>' +
+        '<span class="import-row-sub">' + fmtDate(r.date) + '</span>' + badges +
+        '<select class="import-row-category">' + categoryOptions + '</select>' +
+        '<select class="import-row-classification">' + classificationOptions + '</select></span>' +
         '<span class="import-row-amount">' + fmtMoney(r.amount) + '</span>';
       li.querySelector(".import-row-check").addEventListener("change", function (ev) {
         importContext.parsed[idx].include = ev.target.checked;
+      });
+      li.querySelector(".import-row-category").addEventListener("change", function (ev) {
+        importContext.parsed[idx].category = ev.target.value;
+      });
+      li.querySelector(".import-row-classification").addEventListener("change", function (ev) {
+        importContext.parsed[idx].classification = ev.target.value;
+        // Cambiar la clasificación sincroniza la casilla -- "Gasto" se
+        // marca para importar, cualquier otra cosa se desmarca. El usuario
+        // aún puede desmarcar un "Gasto" concreto a mano si no lo quiere.
+        importContext.parsed[idx].include = ev.target.value === "expense";
+        li.querySelector(".import-row-check").checked = importContext.parsed[idx].include;
+        // Recurrentes y el contador de "gastos" dependen de la
+        // clasificación actual, no de la inicial -- se recalculan aquí.
+        renderImportRecurringBlock();
+        updateImportReviewCount();
       });
       previewList.appendChild(li);
     });
@@ -3680,8 +3870,66 @@
     $("import-step-actions").hidden = false;
   }
 
+  // Borra por chunks de 450 (margen bajo el límite de 500 escrituras por
+  // batch de Firestore) todos los gastos de un lote de importación.
+  function undoImportBatch(spaceId, importBatchId) {
+    return db.collection("expenses")
+      .where("spaceId", "==", spaceId)
+      .where("importBatchId", "==", importBatchId)
+      .get()
+      .then(function (snap) {
+        var docs = snap.docs, chunks = [];
+        for (var i = 0; i < docs.length; i += 450) chunks.push(docs.slice(i, i + 450));
+        return chunks.reduce(function (p, chunk) {
+          return p.then(function () {
+            var b = db.batch();
+            chunk.forEach(function (d) { b.delete(d.ref); });
+            return b.commit();
+          });
+        }, Promise.resolve());
+      });
+  }
+
+  function showImportSummary(importedRows, importBatchId) {
+    var groups = {};
+    importedRows.forEach(function (r) {
+      var key = monthKey(r.date);
+      if (!groups[key]) groups[key] = { count: 0, total: 0 };
+      groups[key].count++;
+      groups[key].total += r.amount;
+    });
+    var list = $("import-summary-list");
+    list.innerHTML = "";
+    Object.keys(groups).sort().forEach(function (key) {
+      var g = groups[key];
+      var row = document.createElement("div");
+      row.className = "import-recurring-item";
+      row.innerHTML = '<span class="import-recurring-info"><span class="import-recurring-label">' + escapeHtml(key) + '</span>' +
+        '<span class="import-recurring-sub">' + g.count + ' gasto' + (g.count > 1 ? "s" : "") + ' · ' + fmtMoney(g.total) + '</span></span>';
+      list.appendChild(row);
+    });
+    $("btn-import-undo").onclick = function () {
+      $("btn-import-undo").disabled = true;
+      undoImportBatch(state.space.id, importBatchId).then(function () {
+        showToast("Importación deshecha.");
+        closeImportModal();
+      }).catch(function (err) {
+        console.error(err);
+        showToast("No se ha podido deshacer. Inténtalo otra vez.");
+        $("btn-import-undo").disabled = false;
+      });
+    };
+    $("import-step-review").hidden = true;
+    $("import-step-actions").hidden = true;
+    $("import-step-summary").hidden = false;
+  }
+
   function confirmImport() {
-    var toImport = importContext.parsed.filter(function (r) { return r.include; });
+    // Solo se importa lo clasificado como "expense" -- ni la casilla ni el
+    // signo bastan por sí solos: es la clasificación confirmada la que
+    // decide qué se convierte en gasto (nunca ciegamente transferencias,
+    // reembolsos ni ingresos).
+    var toImport = importContext.parsed.filter(function (r) { return r.include && r.classification === "expense"; });
     if (!toImport.length && !importContext.recurringGroups.some(function (g) { return g.addAsFixed; })) {
       showToast("No hay nada seleccionado para importar.");
       return;
@@ -3691,6 +3939,7 @@
     btn.disabled = true;
     btn.textContent = "Importando...";
 
+    var importBatchId = "imp_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
     var batch = db.batch();
     var spaceId = state.space.id;
     var email = state.user.email || "";
@@ -3698,14 +3947,17 @@
 
     toImport.forEach(function (r) {
       var ref = db.collection("expenses").doc();
-      batch.set(ref, {
+      // Nunca se guarda el texto bancario original -- solo el concepto ya
+      // saneado (sin referencias/códigos). Ver PHASE_CSV_V2.md.
+      var cleanConcept = CsvImport.cleanConceptForDisplay(r.concept);
+      var fields = {
         spaceId: spaceId,
         amount: r.amount,
         category: r.category,
         type: importContext.type,
         affectsDebt: true,
-        place: "",
-        note: "Importado del banco: " + (r.concept || ""),
+        place: cleanConcept,
+        note: "",
         lat: null,
         lng: null,
         uid: state.user.uid,
@@ -3715,8 +3967,21 @@
         payerEmail: email,
         expenseDate: r.date,
         tripGoalId: null,
+        importBatchId: importBatchId,
+        importFingerprint: r.fingerprint,
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
+      };
+      // Mismo motor y mismo default que el formulario manual y el quick
+      // add (materializeEconomicSplit) -- un gasto conjunto importado por
+      // CSV no debe comportarse distinto de uno tecleado a mano.
+      if (fields.type === "conjunto") {
+        var materialized = materializeEconomicSplit(fields.amount, fields.payerEmail);
+        if (materialized) {
+          fields.economicSplit = materialized.economicSplit;
+          fields.splitBp = materialized.splitBp;
+        }
+      }
+      batch.set(ref, fields);
     });
 
     importContext.recurringGroups.filter(function (g) { return g.addAsFixed; }).forEach(function (g) {
@@ -3732,9 +3997,7 @@
     });
 
     batch.commit().then(function () {
-      var fixedCount = importContext.recurringGroups.filter(function (g) { return g.addAsFixed; }).length;
-      closeImportModal();
-      showToast("¡Importados " + toImport.length + " gastos" + (fixedCount ? " y " + fixedCount + " gasto" + (fixedCount > 1 ? "s" : "") + " fijo" + (fixedCount > 1 ? "s" : "") : "") + "! 🎉");
+      showImportSummary(toImport, importBatchId);
     }).catch(function (err) {
       console.error(err);
       showToast("No se ha podido importar. Inténtalo otra vez.");
@@ -3766,9 +4029,31 @@
       var errEl = $("import-file-error");
       errEl.hidden = true;
 
+      // El selector de archivo limita a .csv, pero eso no lo hacen cumplir
+      // todos los sistemas (ni el arrastrar y soltar) — un Excel de verdad
+      // (.xlsx/.xls) es en realidad un ZIP binario, y leerlo como texto
+      // produce basura. Fuera de alcance soportarlo (ver
+      // PHASE_CSV_GENERIC.md) — rechazo explícito, no se intenta parsear.
+      var name = (file.name || "").toLowerCase();
+      if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
+        errEl.textContent = "Por ahora solo se puede importar un CSV. Desde tu banco, exporta el extracto eligiendo el formato CSV (no Excel) y súbelo de nuevo.";
+        errEl.hidden = false;
+        $("input-import-file").value = "";
+        return;
+      }
+
       var reader = new FileReader();
       reader.onload = function () {
-        var parsedCsv = parseCsvText(String(reader.result));
+        // Se lee como bytes, no como texto directamente: así se puede
+        // intentar windows-1252 si UTF-8 no da texto legible (ver
+        // CsvImport.decodeCsvBytes) sin tener que volver a leer el archivo.
+        var decoded = CsvImport.decodeCsvBytes(reader.result);
+        if (decoded.looksBinary) {
+          errEl.textContent = "Ese archivo no se puede leer como texto — ¿seguro que es un CSV? Vuelve a exportarlo desde tu banco e inténtalo de nuevo.";
+          errEl.hidden = false;
+          return;
+        }
+        var parsedCsv = CsvImport.parseCsv(decoded.text);
         if (!parsedCsv.rows.length) {
           errEl.textContent = "No hemos podido leer ninguna fila de ese archivo.";
           errEl.hidden = false;
@@ -3776,14 +4061,16 @@
         }
         importContext.headers = parsedCsv.headers;
         importContext.rows = parsedCsv.rows;
-        importContext.mapping = guessColumnMapping(parsedCsv.headers);
+        importContext.headerDetected = parsedCsv.headerDetected;
+        importContext.mapping = CsvImport.guessColumnMapping(parsedCsv.headers);
+        importContext.sign = CsvImport.suggestExpenseSign(parsedCsv.rows, importContext.mapping);
         showMappingStep();
       };
       reader.onerror = function () {
         errEl.textContent = "No se ha podido leer el archivo.";
         errEl.hidden = false;
       };
-      reader.readAsText(file, "UTF-8");
+      reader.readAsArrayBuffer(file);
     });
 
     $("btn-import-preview").addEventListener("click", showReviewStep);
@@ -4048,9 +4335,32 @@
         wrap.querySelectorAll(".type-chip").forEach(function (el) {
           el.classList.toggle("selected", el.dataset.email === p.email);
         });
+        // Los gastos fijos vinculables dependen de quién paga -- se
+        // conserva la selección actual si sigue existiendo para el nuevo
+        // pagador, y si no, queda "Ninguno".
+        updateLinkedFixedOptions($("input-linked-fixed").value);
       });
       wrap.appendChild(btn);
     });
+  }
+
+  // Gasto fijo = previsión. Si este mes se vincula un gasto real a uno
+  // (linkedFixedExpenseId), ese fijo deja de sumarse aparte en el
+  // presupuesto -- ya está contado como gasto real (ver fixedExpensesTotal).
+  // Solo se ofrecen los gastos fijos "propios" (no derivados de préstamo o
+  // meta, que se gestionan solos) de categoría "gasto" del pagador actual.
+  function updateLinkedFixedOptions(selectedId) {
+    var field = $("linked-fixed-field");
+    var select = $("input-linked-fixed");
+    if (!field || !select) return;
+    var options = fixedExpensesFor(state.selectedPayer).filter(function (f) {
+      return !f.fromLoan && !f.fromGoal && f.category === "gasto";
+    });
+    field.hidden = options.length === 0;
+    select.innerHTML = '<option value="">— Ninguno —</option>' + options.map(function (f) {
+      return '<option value="' + f.id + '"' + (f.id === selectedId ? " selected" : "") + '>' +
+        escapeHtml(f.label) + ' (' + fmtMoney(f.amount) + ')</option>';
+    }).join("");
   }
 
   function initTypePicker() {
@@ -4255,6 +4565,7 @@
     initTripExpensePicker();
     updateTripExpenseVisibility();
     initPayerPicker();
+    updateLinkedFixedOptions(null);
     // Crear un gasto nuevo nunca tiene el bloqueo del caso C -- por si el
     // formulario se reutiliza justo después de haber editado uno bloqueado.
     $("input-amount").disabled = false;
@@ -4291,6 +4602,7 @@
     // crear un gasto nuevo, no al editar uno ya guardado.
     $("trip-expense-field").hidden = true;
     initPayerPicker();
+    updateLinkedFixedOptions(expense.linkedFixedExpenseId);
 
     // Caso C (ver PHASE5_INTEGRATION.md): economicSplit sin un splitBp
     // fiable -- no se puede recalcular el reparto si cambia el importe
@@ -4977,6 +5289,7 @@
         note: $("input-note").value.trim(),
         lat: state.locatedCoords ? state.locatedCoords.lat : null,
         lng: state.locatedCoords ? state.locatedCoords.lng : null,
+        linkedFixedExpenseId: $("input-linked-fixed") ? ($("input-linked-fixed").value || null) : null,
         expenseDate: expenseDate
       };
 

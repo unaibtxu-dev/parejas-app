@@ -8,8 +8,8 @@
 <meta name="theme-color" content="#FF6B9D">
 
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E💸%3C/text%3E%3C/svg%3E">
-<link rel="manifest" href="manifest.json?v=20260818r">
-<link rel="apple-touch-icon" href="assets/icon-192.png?v=20260818r">
+<link rel="manifest" href="manifest.json?v=20260820a">
+<link rel="apple-touch-icon" href="assets/icon-192.png?v=20260820a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Gastos en Pareja">
@@ -20,7 +20,7 @@
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 
-<link rel="stylesheet" href="styles.css?v=20260818r">
+<link rel="stylesheet" href="styles.css?v=20260820a">
 </head>
 <body>
 
@@ -278,8 +278,16 @@
           <div class="card-header-row">
             <h2 class="card-title">Gastos del mes</h2>
             <div class="card-header-actions">
+              <button id="btn-select-mode" type="button" class="btn-export-csv" title="Seleccionar varios gastos">☑️ Seleccionar</button>
               <button id="btn-import-csv" type="button" class="btn-export-csv" title="Importar extracto del banco">⬆️ Importar</button>
               <button id="btn-export-csv" type="button" class="btn-export-csv" title="Exportar a CSV">⬇️ CSV</button>
+            </div>
+          </div>
+          <div id="select-mode-bar" class="select-mode-bar" hidden>
+            <label class="select-all-label"><input type="checkbox" id="chk-select-all"> Seleccionar todos</label>
+            <div class="select-mode-actions">
+              <button type="button" id="btn-select-cancel" class="btn-secondary">Cancelar</button>
+              <button type="button" id="btn-select-delete" class="btn-danger-outline" disabled>Eliminar (0)</button>
             </div>
           </div>
           <ul id="expense-list" class="expense-list">
@@ -392,6 +400,11 @@
 
     <label class="field-label">¿En qué?</label>
     <div id="category-picker" class="category-picker"></div>
+
+    <div id="linked-fixed-field" hidden>
+      <label class="field-label" for="input-linked-fixed">¿Es uno de tus gastos fijos de este mes?</label>
+      <select id="input-linked-fixed" class="import-select"></select>
+    </div>
 
     <label class="field-label" for="input-place">¿Dónde?</label>
     <div class="place-input-wrap">
@@ -563,12 +576,15 @@
     <!-- Paso 2: comprobar qué columna es cuál -->
     <div id="import-step-mapping" hidden>
       <p class="field-hint" style="margin:0 0 14px;">Cada banco llama distinto a sus columnas — comprueba que hemos adivinado bien.</p>
+      <p id="import-no-header-hint" class="field-hint" hidden>No hemos encontrado una fila de cabecera clara — te mostramos "Columna 1", "Columna 2"... elige a mano cuál es cuál.</p>
       <label class="field-label" for="import-map-date">Columna de la fecha</label>
       <select id="import-map-date" class="import-select"></select>
       <label class="field-label" for="import-map-amount">Columna del importe</label>
       <select id="import-map-amount" class="import-select"></select>
       <label class="field-label" for="import-map-concept">Columna del concepto</label>
       <select id="import-map-concept" class="import-select"></select>
+      <label class="field-label">¿Cómo aparecen los gastos en este archivo?</label>
+      <div id="import-sign-picker" class="type-picker"></div>
       <button type="button" id="btn-import-preview" class="btn-primary" style="margin-top:16px;">Continuar</button>
       <p id="import-mapping-error" class="splash-error" hidden></p>
     </div>
@@ -587,6 +603,16 @@
     <div id="import-step-actions" class="modal-actions" hidden>
       <button type="button" class="btn-secondary" data-close-import>Cancelar</button>
       <button type="button" id="btn-import-confirm" class="btn-primary">Importar</button>
+    </div>
+
+    <!-- Paso 4: resumen por meses + deshacer -->
+    <div id="import-step-summary" hidden>
+      <p class="field-label" style="margin-top:0;">¡Importado! Resumen por mes:</p>
+      <div id="import-summary-list" class="import-recurring-list"></div>
+      <div class="modal-actions" style="margin-top:16px;">
+        <button type="button" id="btn-import-undo" class="btn-secondary">Deshacer importación</button>
+        <button type="button" id="btn-import-summary-close" class="btn-primary" data-close-import>Cerrar</button>
+      </div>
     </div>
   </div>
 </div>
@@ -801,8 +827,9 @@
 <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script><script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging-compat.js"></script><script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-<script defer src="firebase-config.js?v=20260818r"></script>
+<script defer src="firebase-config.js?v=20260820a"></script>
 <script defer src="debt-calc.js?v=20260820a"></script>
+<script defer src="csv-import.js?v=20260820a"></script>
 <script defer src="app.js?v=20260820a"></script>
 </body>
 </html>
