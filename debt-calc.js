@@ -186,6 +186,93 @@
     return Math.round(totalCentsBalance);
   }
 
+  /* ============ Fase 4/5: reparto habitual + edición de gastos ============ */
+
+  // Reparto habitual efectivo de un espacio, según PHASE4_DEFAULT_SPLIT_DESIGN.md:
+  //   - espacio personal, o pareja con menos de 2 miembros -> null (no aplica)
+  //   - defaultSplitBp presente y válido -> se usa tal cual
+  //   - ausente, o presente pero inválido -> 50/50 (ausente es normal;
+  //     inválido es un estado de recuperación que las reglas de Firestore
+  //     deberían impedir, pero aquí no se distingue el resultado numérico)
+  function resolveDefaultSplitBp(spaceType, memberEmails, defaultSplitBp) {
+    if (spaceType !== "pareja") return null;
+    if (!memberEmails || memberEmails.length !== 2) return null;
+    if (defaultSplitBp && validateEconomicSplit(10000, defaultSplitBp, memberEmails)) {
+      return defaultSplitBp;
+    }
+    var fallback = {};
+    memberEmails.forEach(function (email) { fallback[email] = 5000; });
+    return fallback;
+  }
+
+  // Al editar un gasto, si cambia `amount` y el gasto ya tenía economicSplit,
+  // hay que recalcularlo para que siga sumando el nuevo total exacto --
+  // dejarlo tal cual dejaría de sumar el importe correcto (rompe la garantía
+  // de la Fase 3).
+  //
+  // CORREGIDO (tras revisión): la versión anterior reconstruía el
+  // porcentaje histórico a partir de los céntimos de `economicSplit`
+  // (vía una función `bpFromCents` ya retirada). Eso es matemáticamente
+  // incorrecto para importes pequeños: 0,01€ repartido 50/50 se materializa
+  // como {pagador:1, otro:0} -- indistinguible de un reparto 100/0. Los
+  // céntimos de `economicSplit` son el COSTE MATERIALIZADO, no la
+  // INTENCIÓN porcentual; no contienen suficiente información para
+  // reconstruirla en general.
+  //
+  // Por eso esta función ya NO mira `economicSplit` en absoluto. Recibe
+  // `splitBp` -- los puntos base ya guardados en el propio gasto en el
+  // momento de crearlo o de la última vez que se recalculó por un cambio
+  // de importe (ver PHASE5_INTEGRATION.md, "splitBp") -- y los aplica
+  // directamente al nuevo importe, sin ningún paso de reconstrucción.
+  //
+  // CORREGIDO (política final aprobada -- ya NO hay fallback 50/50 aquí):
+  //   A) sin economicSplit -- ni se llama a esta función (legacy, amount
+  //      editable, se resuelve solo con la fórmula agregada de siempre).
+  //   B) economicSplit + splitBp válido -- se recalcula desde splitBp.
+  //   C) economicSplit + splitBp ausente/inválido -- se devuelve `null`.
+  //      NO se infiere, NO se rellena con 50/50: es responsabilidad del
+  //      caller (app.js) bloquear el cambio de importe en ese caso y
+  //      dejar editables el resto de campos. Un fallback silencioso aquí
+  //      sustituiría una intención desconocida por una inventada -- eso es
+  //      exactamente la heurística que finge certeza que se quiere evitar.
+  function recomputeSplitOnAmountChange(splitBp, memberEmails, newAmountEuros, payerEmail) {
+    if (!splitBp || !validateEconomicSplit(10000, splitBp, memberEmails)) return null;
+    var otherEmail = memberEmails.filter(function (e) { return e !== payerEmail; })[0];
+    var newTotalCents = toCents(newAmountEuros);
+    var economicSplit = buildSplitFromPercent(newTotalCents, [
+      { email: payerEmail, bp: splitBp[payerEmail] },
+      { email: otherEmail, bp: splitBp[otherEmail] }
+    ], payerEmail);
+    return { economicSplit: economicSplit, splitBp: splitBp };
+  }
+
+  // Decide en solitario (sin DOM ni Firestore) si el caso C debe bloquear el
+  // guardado de un gasto editado: SOLO cuando cambia `amount` -- editar
+  // categoría/nota/lugar/payerEmail sin tocar amount nunca bloquea, aunque
+  // el gasto esté en el caso C (economicSplit sin splitBp fiable). Esto es
+  // lo que hace testeable de verdad la regla, en vez de fiarse solo del
+  // `payload.amount !== originalExpense.amount` inline de app.js.
+  function amountEditBlockedByMissingSplitBp(originalExpense, newAmount, memberEmails) {
+    if (!originalExpense || !originalExpense.economicSplit) return false;
+    if (newAmount === originalExpense.amount) return false;
+    var splitBp = originalExpense.splitBp;
+    return !(splitBp && validateEconomicSplit(10000, splitBp, memberEmails));
+  }
+
+  // type es inmutable al editar un gasto existente -- se fuerza aquí al
+  // valor original explícitamente, en vez de depender solo de que la UI
+  // oculte/bloquee el selector (#type-field). Si originalExpense es null
+  // (alta de un gasto nuevo), no hace nada: ahí type sigue siendo libre.
+  function enforceImmutableFieldsOnEdit(payload, originalExpense) {
+    if (!originalExpense) return payload;
+    var result = {};
+    for (var k in payload) {
+      if (Object.prototype.hasOwnProperty.call(payload, k)) result[k] = payload[k];
+    }
+    result.type = originalExpense.type;
+    return result;
+  }
+
   return {
     isDebtExpense: isDebtExpense,
     debtExpenses: debtExpenses,
@@ -197,6 +284,10 @@
     buildSplitFromPercent: buildSplitFromPercent,
     buildSplitFromAmounts: buildSplitFromAmounts,
     defaultSplitCents: defaultSplitCents,
+    resolveDefaultSplitBp: resolveDefaultSplitBp,
+    recomputeSplitOnAmountChange: recomputeSplitOnAmountChange,
+    amountEditBlockedByMissingSplitBp: amountEditBlockedByMissingSplitBp,
+    enforceImmutableFieldsOnEdit: enforceImmutableFieldsOnEdit,
     validateEconomicSplit: validateEconomicSplit,
     validatePayerEmail: validatePayerEmail,
     computeBalanceCents: computeBalanceCents

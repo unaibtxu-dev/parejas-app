@@ -599,8 +599,14 @@
     // puede hacer MIENTRAS sigues siendo miembro. Si solo se borrara la
     // pertenencia, el espacio desaparecería de la lista pero seguirías
     // teniendo permiso para leer y escribir sus gastos.
+    // defaultSplitBp se limpia en la MISMA escritura que reduce
+    // memberEmails (Fase 4, ajuste 2): un reparto habitual guardado con un
+    // email que ya no está en el espacio no debe sobrevivir a que esa
+    // persona se vaya. FieldValue.delete(), no null -- con null el campo
+    // seguiría "presente" para las comprobaciones de ausencia.
     return db.collection("spaces").doc(spaceId).update({
-      memberEmails: firebase.firestore.FieldValue.arrayRemove(email)
+      memberEmails: firebase.firestore.FieldValue.arrayRemove(email),
+      defaultSplitBp: firebase.firestore.FieldValue.delete()
     }).then(function () {
       // Estos dos ya no dependen de ser miembro, sino de que el email sea el
       // tuyo, así que se pueden borrar después sin problema.
@@ -637,7 +643,7 @@
       var data = doc.data();
       var previousType = state.space && state.space.type;
       var type = data.type === "personal" ? "personal" : "pareja";
-      state.space = { id: doc.id, memberEmails: data.memberEmails || [], inviteCode: data.inviteCode || "", type: type, name: data.name || "" };
+      state.space = { id: doc.id, memberEmails: data.memberEmails || [], inviteCode: data.inviteCode || "", type: type, name: data.name || "", defaultSplitBp: data.defaultSplitBp || null };
       // La primera vez que sabemos el tipo (o si cambia), nos aseguramos de
       // estar en una pestaña válida para ese tipo de espacio.
       if (previousType !== type) {
@@ -907,6 +913,8 @@
             payerEmail: data.payerEmail || data.email || "",
             affectsDebt: data.affectsDebt !== false,
             tripGoalId: data.tripGoalId || null,
+            economicSplit: data.economicSplit || null,
+            splitBp: data.splitBp || null,
             date: expenseDate
           };
         }).sort(function (a, b) { return b.date - a.date; });
@@ -918,7 +926,7 @@
   }
 
   function expenseFields(payload) {
-    return {
+    var fields = {
       amount: payload.amount,
       category: payload.category,
       type: payload.type,
@@ -931,6 +939,37 @@
       expenseDate: payload.expenseDate,
       tripGoalId: payload.tripGoalId || null
     };
+    // Solo se incluyen si el caller los ha puesto explícitamente en el
+    // payload (updateExpense() al recalcular por un cambio de importe, ver
+    // el manejador de envío del formulario). Si no están, esta función no
+    // los toca -- así una edición normal (categoría, nota, pagador...) nunca
+    // sobrescribe el economicSplit/splitBp ya guardados: Firestore
+    // .update() deja intactos los campos que no se le pasan.
+    if (payload.economicSplit) fields.economicSplit = payload.economicSplit;
+    if (payload.splitBp) fields.splitBp = payload.splitBp;
+    return fields;
+  }
+
+  // Reparto habitual efectivo de la pareja, ya materializado para un gasto
+  // conjunto concreto. Devuelve { economicSplit, splitBp } o null si no
+  // aplica (espacio personal, o pareja con menos de 2 miembros -- ver
+  // PHASE4_DEFAULT_SPLIT_DESIGN.md, sección 8). splitBp se guarda junto al
+  // economicSplit para poder recalcular sin pérdida si más adelante cambia
+  // `amount` -- ver PHASE5_INTEGRATION.md, "por qué economicSplit no basta
+  // para reconstruir la intención".
+  function materializeEconomicSplit(amount, payerEmail) {
+    if (!state.space || state.space.type !== "pareja") return null;
+    var defaultBp = DebtCalc.resolveDefaultSplitBp(state.space.type, state.space.memberEmails, state.space.defaultSplitBp);
+    if (!defaultBp) return null;
+    if (state.space.defaultSplitBp && !DebtCalc.validateEconomicSplit(10000, state.space.defaultSplitBp, state.space.memberEmails)) {
+      // Esto no debería poder pasar nunca -- las reglas de Firestore lo
+      // impiden en la escritura (Fase 4, ajuste 5). Si aparece, es
+      // recuperación ante datos anómalos, no comportamiento normal.
+      console.warn("defaultSplitBp presente pero inválido en el espacio; usando 50/50 de recuperación.", state.space.defaultSplitBp);
+    }
+    var shares = Object.keys(defaultBp).map(function (email) { return { email: email, bp: defaultBp[email] }; });
+    var economicSplit = DebtCalc.buildSplitFromPercent(DebtCalc.toCents(amount), shares, payerEmail);
+    return { economicSplit: economicSplit, splitBp: defaultBp };
   }
 
   function addExpense(payload) {
@@ -941,6 +980,13 @@
     fields.displayName = state.user.displayName || "";
     fields.photoURL = state.user.photoURL || "";
     fields.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+    if (fields.type === "conjunto" && !fields.economicSplit) {
+      var materialized = materializeEconomicSplit(fields.amount, fields.payerEmail);
+      if (materialized) {
+        fields.economicSplit = materialized.economicSplit;
+        fields.splitBp = materialized.splitBp;
+      }
+    }
     return db.collection("expenses").add(fields);
   }
 
@@ -1465,14 +1511,21 @@
   }
 
   // El cálculo en sí vive en debt-calc.js (probado con node:test, ver
-  // /test/debt-calc.test.js) para poder testearlo sin `state` ni Firestore.
-  // Aquí solo se le pasan los datos reales de la app.
+  // /test/debt-calc.test.js y /test/economic-split.test.js) para poder
+  // testearlo sin `state` ni Firestore. Aquí solo se le pasan los datos
+  // reales de la app.
   function debtExpenses() {
     return DebtCalc.debtExpenses(visibleExpenses());
   }
 
+  // Único motor de balance activo: computeBalanceCents() entiende tanto los
+  // gastos legacy (sin economicSplit, misma semántica agregada que el
+  // computeDebtHalf original) como los que ya tienen economicSplit — la UI
+  // no necesita saber cuál es cuál. DebtCalc.computeDebtHalf() sigue
+  // existiendo en debt-calc.js solo como referencia probada de la Fase 2;
+  // no se llama desde aquí para no tener dos motores activos a la vez.
   function computeDebtHalf() {
-    return DebtCalc.computeDebtHalf(visibleExpenses(), state.settlements, PARTNERS);
+    return DebtCalc.fromCents(DebtCalc.computeBalanceCents(visibleExpenses(), state.settlements, PARTNERS));
   }
 
   /* ============ Rendering ============ */
@@ -4015,6 +4068,7 @@
           el.classList.toggle("selected", el.dataset.key === t.key);
         });
         updateAffectsDebtVisibility();
+        updateSplitHint();
       });
       wrap.appendChild(btn);
     });
@@ -4022,6 +4076,52 @@
 
   function updateAffectsDebtVisibility() {
     $("affects-debt-field").hidden = state.selectedType !== "conjunto";
+  }
+
+  // Representación mínima para verificar la integración de esta fase --
+  // no es el selector visual final (eso es Fase 6+). Al crear, refleja el
+  // reparto habitual efectivo del espacio; al editar, refleja el splitBp
+  // YA guardado en ese gasto (nunca el default actual, ver
+  // PHASE4_DEFAULT_SPLIT_DESIGN.md secciones 12-13, ni reconstruido desde
+  // economicSplit, ver PHASE5_INTEGRATION.md).
+  function splitLabelFromBp(bpA, bpB) {
+    if (bpA === 5000 && bpB === 5000) return "50/50";
+    if ((bpA === 6000 && bpB === 4000) || (bpA === 4000 && bpB === 6000)) return "60/40";
+    return "Personalizado";
+  }
+
+  function updateSplitHint() {
+    var el = $("split-hint");
+    if (!el) return;
+    if (state.selectedType !== "conjunto" || !state.space || state.space.type !== "pareja") {
+      el.hidden = true;
+      return;
+    }
+
+    // Al editar, se muestra el splitBp YA guardado en el propio gasto --
+    // nunca se reconstruye desde los céntimos de economicSplit (eso es
+    // justo el error corregido en PHASE5_INTEGRATION.md: para importes
+    // pequeños, los céntimos no bastan para saber el porcentaje real). Si
+    // el gasto tiene economicSplit pero no splitBp (versión intermedia sin
+    // esa información), se prefiere no mostrar un porcentaje que no se
+    // puede garantizar, antes que fingir precisión.
+    var bpMap = null;
+    var original = state.editingExpenseId
+      ? state.allExpenses.find(function (e) { return e.id === state.editingExpenseId; })
+      : null;
+    if (original && original.economicSplit) {
+      bpMap = original.splitBp || null;
+    } else {
+      bpMap = DebtCalc.resolveDefaultSplitBp(state.space.type, state.space.memberEmails, state.space.defaultSplitBp);
+    }
+
+    var emails = bpMap ? Object.keys(bpMap) : [];
+    if (emails.length !== 2) {
+      el.hidden = true;
+      return;
+    }
+    el.hidden = false;
+    el.textContent = "Compartido · " + splitLabelFromBp(bpMap[emails[0]], bpMap[emails[1]]);
   }
 
   function initAffectsDebtPicker() {
@@ -4122,8 +4222,13 @@
   // a individual/tú mismo y se ocultan esos campos.
   function updateSoloFieldsVisibility() {
     var solo = isPersonalSpace();
-    $("payer-field").hidden = solo;
-    $("type-field").hidden = solo;
+    var editing = !!state.editingExpenseId;
+    $("payer-field").hidden = solo; // el pagador sí se puede corregir al editar
+    // type es inmutable al editar un gasto ya existente (alinea la UI con
+    // la inmutabilidad de `type` ya diseñada para las Firestore Rules,
+    // ver PHASE1_MIO_NUESTRO_Y_PRIVACIDAD.md) -- crear uno nuevo sigue
+    // permitiendo elegir con las reglas de siempre (personal vs pareja).
+    $("type-field").hidden = solo || editing;
     if (solo) $("affects-debt-field").hidden = true;
   }
 
@@ -4145,10 +4250,15 @@
     initTypePicker();
     initAffectsDebtPicker();
     updateAffectsDebtVisibility();
+    updateSplitHint();
     updateSoloFieldsVisibility();
     initTripExpensePicker();
     updateTripExpenseVisibility();
     initPayerPicker();
+    // Crear un gasto nuevo nunca tiene el bloqueo del caso C -- por si el
+    // formulario se reutiliza justo después de haber editado uno bloqueado.
+    $("input-amount").disabled = false;
+    $("amount-locked-hint").hidden = true;
     $("modal-add").hidden = false;
     setTimeout(function () { $("input-amount").focus(); }, 250);
   }
@@ -4175,11 +4285,22 @@
     initTypePicker();
     initAffectsDebtPicker();
     updateAffectsDebtVisibility();
+    updateSplitHint();
     updateSoloFieldsVisibility();
     // El reparto automático con el presupuesto del viaje solo se aplica al
     // crear un gasto nuevo, no al editar uno ya guardado.
     $("trip-expense-field").hidden = true;
     initPayerPicker();
+
+    // Caso C (ver PHASE5_INTEGRATION.md): economicSplit sin un splitBp
+    // fiable -- no se puede recalcular el reparto si cambia el importe
+    // (no se infiere, no hay fallback 50/50), así que el campo se bloquea
+    // en vez de dejar guardar algo silenciosamente incoherente.
+    var amountLocked = !!(expense.economicSplit && state.space && state.space.type === "pareja" &&
+      !(expense.splitBp && DebtCalc.validateEconomicSplit(10000, expense.splitBp, state.space.memberEmails)));
+    $("input-amount").disabled = amountLocked;
+    $("amount-locked-hint").hidden = !amountLocked;
+
     $("modal-add").hidden = false;
     setTimeout(function () { $("input-amount").focus(); }, 250);
   }
@@ -4860,8 +4981,45 @@
       };
 
       var isEditing = !!state.editingExpenseId;
+      var originalExpense = isEditing
+        ? state.allExpenses.find(function (e) { return e.id === state.editingExpenseId; })
+        : null;
       var trip = !isEditing ? activeTrip() : null;
       var savingAsTrip = trip && state.selectedIsTripExpense;
+
+      // type es inmutable al editar -- no depende solo de que #type-field
+      // esté oculto en la UI (openModalForEdit()/updateSoloFieldsVisibility()):
+      // se fuerza aquí explícitamente al valor original, así que ningún
+      // otro camino de código (ni un futuro cambio de la UI) puede colarlo.
+      // Testeado en debt-calc.js vía enforceImmutableFieldsOnEdit().
+      payload = DebtCalc.enforceImmutableFieldsOnEdit(payload, originalExpense);
+
+      // Política final (A/B/C, ver PHASE5_INTEGRATION.md) -- el bloqueo
+      // del caso C se decide con una función pura y testeada
+      // (amountEditBlockedByMissingSplitBp), que ya comprueba por sí sola
+      // que el importe haya cambiado: si no cambia, categoría/nota/lugar/
+      // pagador se guardan con total normalidad, aunque el gasto esté en
+      // el caso C.
+      //   A) sin economicSplit -- nunca bloquea, amount libre, legacy de siempre.
+      //   B) economicSplit + splitBp válido -- se recalcula desde splitBp
+      //      (nunca desde los céntimos de economicSplit: para importes
+      //      pequeños no basta, 0,01€ 50/50 se guarda igual que 100/0).
+      //   C) economicSplit + splitBp ausente/inválido + amount cambiado --
+      //      NO se infiere, NO hay fallback 50/50: se bloquea el guardado
+      //      entero. input-amount ya viene deshabilitado desde
+      //      openModalForEdit() para este caso, pero se repite la
+      //      comprobación aquí como red de seguridad, no solo en la UI.
+      if (isEditing && originalExpense && originalExpense.economicSplit && payload.amount !== originalExpense.amount) {
+        if (DebtCalc.amountEditBlockedByMissingSplitBp(originalExpense, payload.amount, state.space.memberEmails)) {
+          showToast("Este gasto no tiene un reparto guardado de forma fiable — no se puede cambiar el importe. Edita el resto de campos, o bórralo y crea uno nuevo.");
+          return;
+        }
+        var recomputed = DebtCalc.recomputeSplitOnAmountChange(
+          originalExpense.splitBp, state.space.memberEmails, payload.amount, payload.payerEmail
+        );
+        payload.economicSplit = recomputed.economicSplit;
+        payload.splitBp = recomputed.splitBp;
+      }
 
       var saveBtn = $("btn-save");
       saveBtn.disabled = true;

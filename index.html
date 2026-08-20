@@ -366,6 +366,7 @@
       <input id="input-amount" class="amount-input" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0" required autocomplete="off">
       <span class="amount-suffix">€</span>
     </div>
+    <p id="amount-locked-hint" class="field-hint" hidden>Este gasto no tiene un reparto por porcentaje guardado de forma fiable — el importe no se puede cambiar aquí. Puedes editar el resto de campos, o borrarlo y crear uno nuevo con el importe correcto.</p>
 
     <div id="payer-field">
       <label class="field-label">¿Quién paga?</label>
@@ -381,6 +382,8 @@
       <label class="field-label">¿Cuenta para el balance de deudas?</label>
       <div id="affects-debt-picker" class="type-picker"></div>
     </div>
+
+    <p id="split-hint" class="field-hint" hidden></p>
 
     <div id="trip-expense-field" hidden>
       <label class="field-label" id="trip-expense-label">¿Es del viaje?</label>
@@ -799,7 +802,7 @@
 <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script><script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging-compat.js"></script><script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 <script defer src="firebase-config.js?v=20260818r"></script>
-<script defer src="debt-calc.js?v=20260818r"></script>
-<script defer src="app.js?v=20260818r"></script>
+<script defer src="debt-calc.js?v=20260820a"></script>
+<script defer src="app.js?v=20260820a"></script>
 </body>
 </html>
